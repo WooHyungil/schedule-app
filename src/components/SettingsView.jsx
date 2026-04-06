@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Bell, BellRing, LogOut, Mail, Plus, Trash2, UserRound, Users, Check, AlertCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bell, BellRing, LogOut, Mail, Plus, Trash2, UserRound, Users, Check, AlertCircle, Globe, Copy } from 'lucide-react';
 import { useStorage } from '../utils';
 import { signOutUser } from '../auth-service';
 
@@ -14,6 +14,8 @@ export default function SettingsView({ onLogout }) {
   const [events] = useStorage('events', []);
   const [expenses] = useStorage('expenses', []);
   const [dailyTemplates] = useStorage('dailyTemplates', []);
+  const [syncMode, setSyncMode] = useStorage('syncMode', 'global');
+  const [globalShareCode, setGlobalShareCode] = useStorage('globalShareCode', '');
 
   const [currentUser, setCurrentUser] = useStorage('currentUser', null);
   const [shareConnections, setShareConnections] = useStorage('shareConnections', []);
@@ -30,6 +32,22 @@ export default function SettingsView({ onLogout }) {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteNickname, setInviteNickname] = useState('');
   const [inviteError, setInviteError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const defaultGlobalCode = useMemo(() => {
+    const seed = String(currentUser?.uid || '')
+      .replace(/^local_/, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 18);
+    return seed || 'team-main';
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
+    if (!globalShareCode && defaultGlobalCode) {
+      setGlobalShareCode(defaultGlobalCode);
+    }
+  }, [defaultGlobalCode, globalShareCode, setGlobalShareCode]);
 
   const sharedSummary = useMemo(() => {
     const eventCount = events.length;
@@ -117,6 +135,18 @@ export default function SettingsView({ onLogout }) {
     if (onLogout) onLogout();
   };
 
+  const copyCode = async () => {
+    const value = String(globalShareCode || '').trim();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
     <div className="p-4 max-w-4xl mx-auto pb-6 space-y-4">
       {/* Header */}
@@ -169,6 +199,68 @@ export default function SettingsView({ onLogout }) {
         >
           <LogOut size={16} /> 로그아웃
         </button>
+      </div>
+
+      <div className="bg-white/85 backdrop-blur-sm rounded-2xl shadow-sm border border-white/70 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center">
+            <Globe size={20} />
+          </div>
+          <div>
+            <p className="font-semibold text-slate-900">연동 모드</p>
+            <p className="text-xs text-slate-500">글로벌 모드에서 다른 사람과 실시간 공유</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setSyncMode('personal')}
+            className={`px-3 py-2 rounded-lg text-sm font-semibold border-2 transition ${
+              syncMode === 'personal'
+                ? 'border-slate-800 bg-slate-900 text-white'
+                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            개인 모드
+          </button>
+          <button
+            type="button"
+            onClick={() => setSyncMode('global')}
+            className={`px-3 py-2 rounded-lg text-sm font-semibold border-2 transition ${
+              syncMode === 'global'
+                ? 'border-cyan-500 bg-cyan-500 text-white'
+                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            글로벌 모드
+          </button>
+        </div>
+
+        {syncMode === 'global' && (
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4">
+            <label className="block text-xs font-semibold text-slate-600 mb-2">글로벌 공유 코드</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={globalShareCode}
+                onChange={(e) => setGlobalShareCode(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                placeholder="예: team-main"
+                className="flex-1 px-3 py-2.5 rounded-lg border border-cyan-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-100 focus:border-cyan-400"
+              />
+              <button
+                type="button"
+                onClick={copyCode}
+                className="px-3 py-2.5 rounded-lg border border-cyan-300 text-cyan-700 bg-white hover:bg-cyan-50 text-sm font-semibold inline-flex items-center gap-1"
+              >
+                <Copy size={14} /> {copied ? '복사됨' : '복사'}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-600">
+              같은 코드를 입력한 사용자끼리 동일한 일정/데이터가 실시간으로 연동됩니다.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Notification Section */}

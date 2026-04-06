@@ -96,6 +96,8 @@ function useSyncedCollection({
 
 export function useCloudSync() {
   const [currentUser, setCurrentUser] = useStorage('currentUser', null);
+  const [syncMode] = useStorage('syncMode', 'global');
+  const [globalShareCode] = useStorage('globalShareCode', '');
   const [shareConnections, setShareConnections] = useStorage('shareConnections', []);
   const [shareOptions, setShareOptions] = useStorage('shareOptions', { events: true, expenses: true, daily: true });
   const [notificationSettings, setNotificationSettings] = useStorage('notificationSettings', { enabled: false, defaultReminderMinutes: 10 });
@@ -109,7 +111,18 @@ export function useCloudSync() {
   const [meetings, setMeetings] = useStorage('meetings', []);
   const [memos, setMemos] = useStorage('memos', []);
   const [syncState, setSyncState] = useState({ status: 'idle', lastSyncedAt: null, error: '' });
-  const cloudUid = currentUser?.uid;
+  const normalizedGlobalCode = String(globalShareCode || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
+  const defaultGlobalSeed = String(currentUser?.uid || '')
+    .replace(/^local_/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
+  const effectiveGlobalCode = normalizedGlobalCode || defaultGlobalSeed;
+  const cloudUid = syncMode === 'global'
+    ? (effectiveGlobalCode ? `global_${effectiveGlobalCode}` : null)
+    : currentUser?.uid;
 
   const remoteHashesRef = useRef({});
   const readyRef = useRef({ profile: false });

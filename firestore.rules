@@ -5,6 +5,10 @@ service cloud.firestore {
       return userId.matches('^local_[A-Za-z0-9_-]+$');
     }
 
+    function isGlobalWorkspaceId(userId) {
+      return userId.matches('^global_[A-Za-z0-9_-]+$');
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -14,10 +18,10 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId);
+      allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId) || isGlobalWorkspaceId(userId);
 
       match /{document=**} {
-        allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId);
+        allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId) || isGlobalWorkspaceId(userId);
       }
     }
   }
