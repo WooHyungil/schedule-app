@@ -1,6 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isEmailOnlyUserId(userId) {
+      return userId.matches('^local_[A-Za-z0-9_-]+$');
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -10,10 +14,10 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId);
 
       match /{document=**} {
-        allow read, write: if isOwner(userId);
+        allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId);
       }
     }
   }

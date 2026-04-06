@@ -109,8 +109,7 @@ export function useCloudSync() {
   const [meetings, setMeetings] = useStorage('meetings', []);
   const [memos, setMemos] = useStorage('memos', []);
   const [syncState, setSyncState] = useState({ status: 'idle', lastSyncedAt: null, error: '' });
-  const isLocalFallbackUser = String(currentUser?.uid || '').startsWith('local_');
-  const cloudUid = isLocalFallbackUser ? null : currentUser?.uid;
+  const cloudUid = currentUser?.uid;
 
   const remoteHashesRef = useRef({});
   const readyRef = useRef({ profile: false });

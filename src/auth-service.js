@@ -46,7 +46,10 @@ function normalizeEmail(email) {
 
 function createEmailUid(email) {
   const normalized = normalizeEmail(email);
-  const base = btoa(unescape(encodeURIComponent(normalized))).replace(/=+$/g, '');
+  const base = btoa(unescape(encodeURIComponent(normalized)))
+    .replace(/=+$/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
   return `local_${base}`;
 }
 
@@ -121,12 +124,15 @@ export function signInOrCreateWithEmailOnly(email, displayName) {
     throw new Error('유효한 이메일 형식을 입력해주세요.');
   }
 
+  const deterministicUid = createEmailUid(normalizedEmail);
+
   const users = getLocalAuthUsers();
   const existing = users.find((item) => normalizeEmail(item.email) === normalizedEmail);
 
   if (existing) {
     const mergedUser = {
       ...existing,
+      uid: deterministicUid,
       displayName: displayName?.trim() || existing.displayName || '사용자',
       provider: 'email-only',
       updatedAt: new Date().toISOString(),
@@ -150,7 +156,7 @@ export function signInOrCreateWithEmailOnly(email, displayName) {
   }
 
   const newUser = {
-    uid: createEmailUid(normalizedEmail),
+    uid: deterministicUid,
     email: normalizedEmail,
     displayName: displayName?.trim() || '사용자',
     photoURL: '',
