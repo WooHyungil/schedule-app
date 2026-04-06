@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Plus, X, Trash2, Clock, TrendingUp, TrendingDown, Users, BellRing } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, X, Trash2, Clock, TrendingUp, TrendingDown, Users } from "lucide-react";
 import { useStorage, formatDate, generateId, appliesTemplateOnDate } from "../utils";
 import YearlyView from "./YearlyView";
 
@@ -22,14 +22,14 @@ const CAT_BADGE = {
 
 function SectionCard({ title, badge, colorClass, isEmpty, emptyText, children }) {
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm border border-white/60 overflow-hidden">
-      <div className={`px-4 py-2.5 flex items-center gap-2 border-b border-black/5 ${colorClass}`}>
+    <div className="glass-panel overflow-hidden rounded-[30px]">
+      <div className={`flex items-center gap-2 border-b border-white/60 px-5 py-3 ${colorClass}`}>
         <span className="text-xs font-bold tracking-wide">{title}</span>
         {badge > 0 && (
-          <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/60">{badge}개</span>
+          <span className="ml-auto rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-bold shadow-sm">{badge}개</span>
         )}
       </div>
-      <div className="p-3">
+      <div className="p-4">
         {isEmpty ? (
           <p className="text-slate-300 text-xs text-center py-4">{emptyText}</p>
         ) : (
@@ -51,7 +51,7 @@ function FieldBlock({ label, children }) {
 
 function Card({ children, className = "" }) {
   return (
-    <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-4 ${className}`}>
+    <div className={`soft-card rounded-[28px] p-4 space-y-4 ${className}`}>
       {children}
     </div>
   );
@@ -63,6 +63,44 @@ function fmtTime(val) {
   } catch { return ""; }
 }
 
+function normalizeNoteText(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function clampMonthDay(year, month, day) {
+  const safeMonth = Math.max(1, Math.min(12, Number(month || 1)));
+  const lastDay = new Date(year, safeMonth, 0).getDate();
+  const safeDay = Math.max(1, Math.min(lastDay, Number(day || 1)));
+  return { month: safeMonth, day: safeDay };
+}
+
+function buildSalaryUsagePeriod(baseDate, financeForm) {
+  const baseYear = baseDate.getFullYear();
+  const startParts = clampMonthDay(baseYear, financeForm.salaryStartMonth, financeForm.salaryStartDay);
+  const start = new Date(baseYear, startParts.month - 1, startParts.day, 0, 0, 0, 0);
+
+  const endYear =
+    Number(financeForm.salaryEndMonth) < Number(financeForm.salaryStartMonth) ||
+    (Number(financeForm.salaryEndMonth) === Number(financeForm.salaryStartMonth) && Number(financeForm.salaryEndDay) < Number(financeForm.salaryStartDay))
+      ? baseYear + 1
+      : baseYear;
+  const endParts = clampMonthDay(endYear, financeForm.salaryEndMonth, financeForm.salaryEndDay);
+  const end = new Date(endYear, endParts.month - 1, endParts.day, 23, 59, 59, 999);
+
+  return { start, end };
+}
+
+function sortByCreatedAtDesc(a, b) {
+  return new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime();
+}
+
 export default function CalendarView() {
   const [events, setEvents] = useStorage("events", []);
   const [expenses, setExpenses] = useStorage("expenses", []);
@@ -72,23 +110,97 @@ export default function CalendarView() {
   const [quickTitles, setQuickTitles] = useStorage("quickTitles", []);
   const [dailyTemplates] = useStorage("dailyTemplates", []);
   const [dailyCompletionMap] = useStorage("dailyCompletionMap", {});
-  const [notificationSettings] = useStorage("notificationSettings", { enabled: false, defaultReminderMinutes: 10 });
-  const [currentUser] = useStorage("currentUser", null);
+
+  const safeEvents = useMemo(() => {
+    const src = Array.isArray(events) ? events : [];
+    const map = new Map();
+    src.forEach((item) => {
+      if (!item || typeof item !== "object" || !item.id) return;
+      map.set(item.id, item);
+    });
+    return Array.from(map.values());
+  }, [events]);
+  const safeExpenses = useMemo(() => {
+    const src = Array.isArray(expenses) ? expenses : [];
+    const map = new Map();
+    src.forEach((item) => {
+      if (!item || typeof item !== "object" || !item.id) return;
+      map.set(item.id, item);
+    });
+    return Array.from(map.values());
+  }, [expenses]);
+  const safeAccounts = useMemo(
+    () => (Array.isArray(accounts) ? accounts.filter((v) => typeof v === "string" && v.trim()).map((v) => v.trim()) : []),
+    [accounts],
+  );
+  const safeMeetings = useMemo(() => {
+    const src = Array.isArray(meetings) ? meetings : [];
+    const map = new Map();
+    src.forEach((item) => {
+      if (!item || typeof item !== "object" || !item.id) return;
+      map.set(item.id, item);
+    });
+    return Array.from(map.values());
+  }, [meetings]);
+  const safeMemos = useMemo(() => {
+    const src = Array.isArray(memos) ? memos : [];
+    const map = new Map();
+    src.forEach((item) => {
+      if (!item || typeof item !== "object" || !item.id) return;
+      map.set(item.id, item);
+    });
+    return Array.from(map.values());
+  }, [memos]);
+  const safeQuickTitles = useMemo(
+    () => (Array.isArray(quickTitles) ? quickTitles.filter((v) => typeof v === "string" && v.trim()).map((v) => v.trim()) : []),
+    [quickTitles],
+  );
+  const safeDailyTemplates = useMemo(() => {
+    const src = Array.isArray(dailyTemplates) ? dailyTemplates : [];
+    const map = new Map();
+    src.forEach((item) => {
+      if (!item || typeof item !== "object" || !item.id) return;
+      map.set(item.id, item);
+    });
+    return Array.from(map.values());
+  }, [dailyTemplates]);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isYearlyMode, setIsYearlyMode] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addType, setAddType] = useState("event");
   const [quickInput, setQuickInput] = useState("");
+  const submitLockRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [form, setForm] = useState({
     title: "", description: "", category: "일반",
-    visibility: "private",
-    showTime: false, startTime: "09:00", endTime: "10:00", reminderMinutes: notificationSettings.defaultReminderMinutes || 10,
+    showTime: false, startTime: "09:00", endTime: "10:00",
   });
-  const [financeForm, setFinanceForm] = useState({ title: "", amount: "", type: "expense", category: "식사", memo: "", account: "" });
+  const [financeForm, setFinanceForm] = useState({
+    title: "",
+    amount: "",
+    type: "expense",
+    category: "식사",
+    memo: "",
+    account: "",
+    salaryStartMonth: selectedDate.getMonth() + 1,
+    salaryStartDay: selectedDate.getDate(),
+    salaryEndMonth: selectedDate.getMonth() + 1,
+    salaryEndDay: selectedDate.getDate(),
+    budgetAmount: "",
+  });
   const [meetingForm, setMeetingForm] = useState({ title: "", attendees: "", content: "", decisions: "" });
   const [memoForm, setMemoForm] = useState({ title: "", content: "" });
+
+  useEffect(() => {
+    if (!showAddModal || typeof document === "undefined") return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showAddModal]);
 
   const categories = ["일반", "업무", "개인", "약속", "휴가", "중요"];
   const expenseCats = ["식사", "교통", "쇼핑", "생활비", "의료", "기타"];
@@ -108,8 +220,12 @@ export default function CalendarView() {
     memo:    "from-teal-500 to-cyan-600",
   };
 
-  const monthStart = useMemo(() => new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1), [selectedDate]);
-  const monthEnd   = useMemo(() => new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0), [selectedDate]);
+  const selectedYear = selectedDate.getFullYear();
+  const selectedMonth = selectedDate.getMonth();
+  const selectedDateKey = formatDate(selectedDate);
+
+  const monthStart = useMemo(() => new Date(selectedYear, selectedMonth, 1), [selectedYear, selectedMonth]);
+  const monthEnd   = useMemo(() => new Date(selectedYear, selectedMonth + 1, 0), [selectedYear, selectedMonth]);
   const daysInMonth   = monthEnd.getDate();
   const startDow      = monthStart.getDay();
 
@@ -117,64 +233,118 @@ export default function CalendarView() {
     const days = [];
     for (let i = 0; i < startDow; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) {
-      days.push(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), i));
+      days.push(new Date(selectedYear, selectedMonth, i));
     }
     return days;
-  }, [selectedDate, daysInMonth, startDow]);
+  }, [selectedYear, selectedMonth, daysInMonth, startDow]);
+
+  const eventsByDate = useMemo(() => {
+    const byDate = Object.create(null);
+    safeEvents.forEach((event) => {
+      const d = new Date(event?.startDate);
+      if (Number.isNaN(d.getTime())) return;
+      const key = formatDate(d);
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push({ ...event, isDailyTemplate: false });
+    });
+    return byDate;
+  }, [safeEvents]);
+
+  const expensesByDate = useMemo(() => {
+    const byDate = Object.create(null);
+    safeExpenses.forEach((item) => {
+      const d = new Date(item?.date);
+      if (Number.isNaN(d.getTime())) return;
+      const key = formatDate(d);
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push(item);
+    });
+    Object.values(byDate).forEach((items) => items.sort(sortByCreatedAtDesc));
+    return byDate;
+  }, [safeExpenses]);
+
+  const meetingsByDate = useMemo(() => {
+    const byDate = Object.create(null);
+    safeMeetings.forEach((item) => {
+      const d = new Date(item?.date);
+      if (Number.isNaN(d.getTime())) return;
+      const key = formatDate(d);
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push(item);
+    });
+    Object.values(byDate).forEach((items) => items.sort(sortByCreatedAtDesc));
+    return byDate;
+  }, [safeMeetings]);
+
+  const memosByDate = useMemo(() => {
+    const byDate = Object.create(null);
+    safeMemos.forEach((item) => {
+      const d = new Date(item?.date);
+      if (Number.isNaN(d.getTime())) return;
+      const key = formatDate(d);
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push(item);
+    });
+    Object.values(byDate).forEach((items) => items.sort(sortByCreatedAtDesc));
+    return byDate;
+  }, [safeMemos]);
 
   const selectedDayEvents = useMemo(() => {
-    const key = formatDate(selectedDate);
-    const normal = events
-      .filter((e) => formatDate(e.startDate) === key)
-      .map((e) => ({ ...e, isDailyTemplate: false }));
-    const daily = dailyTemplates
+    const normal = eventsByDate[selectedDateKey] || [];
+    const daily = safeDailyTemplates
       .filter((t) => appliesTemplateOnDate(t, selectedDate))
       .map((t) => ({
-        id: `daily-${t.id}-${key}`,
+        id: `daily-${t.id}-${selectedDateKey}`,
         templateId: t.id,
         title: t.title,
         description: t.description,
-        ownerName: t.ownerName,
-        visibility: t.visibility,
         category: t.category,
         showTime: t.showTime || false,
-        startDate: new Date(`${key}T${t.time || "09:00"}`),
+        startDate: new Date(`${selectedDateKey}T${t.time || "09:00"}`),
         endDate: null,
-        isCompleted: Boolean(dailyCompletionMap[`${t.id}_${key}`]),
+        isCompleted: Boolean(dailyCompletionMap[`${t.id}_${selectedDateKey}`]),
         isDailyTemplate: true,
       }));
     return [...daily, ...normal];
-  }, [selectedDate, events, dailyTemplates, dailyCompletionMap]);
+  }, [selectedDate, selectedDateKey, eventsByDate, safeDailyTemplates, dailyCompletionMap]);
 
   const selectedDayFinance = useMemo(() => {
-    const key = formatDate(selectedDate);
-    return expenses
-      .filter((e) => formatDate(e.date) === key)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [selectedDate, expenses]);
+    return expensesByDate[selectedDateKey] || [];
+  }, [expensesByDate, selectedDateKey]);
 
   const selectedDayMeetings = useMemo(() => {
-    const key = formatDate(selectedDate);
-    return meetings
-      .filter((m) => formatDate(m.date) === key)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [selectedDate, meetings]);
+    return meetingsByDate[selectedDateKey] || [];
+  }, [meetingsByDate, selectedDateKey]);
 
   const selectedDayMemos = useMemo(() => {
-    const key = formatDate(selectedDate);
-    return memos
-      .filter((m) => formatDate(m.date) === key)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [selectedDate, memos]);
+    return memosByDate[selectedDateKey] || [];
+  }, [memosByDate, selectedDateKey]);
 
-  const getDayTotal = (date) => {
-    if (!date) return 0;
-    const key = formatDate(date);
-    return (
-      events.filter((e) => formatDate(e.startDate) === key).length +
-      dailyTemplates.filter((t) => appliesTemplateOnDate(t, date)).length
-    );
-  };
+  const dayTotalMap = useMemo(() => {
+    const map = Object.create(null);
+
+    safeEvents.forEach((event) => {
+      const eventDate = new Date(event?.startDate);
+      if (Number.isNaN(eventDate.getTime())) return;
+      if (eventDate.getFullYear() !== selectedYear || eventDate.getMonth() !== selectedMonth) return;
+      const key = formatDate(eventDate);
+      map[key] = (map[key] || 0) + 1;
+    });
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(selectedYear, selectedMonth, day);
+      const key = formatDate(date);
+      let templateCount = 0;
+      for (let i = 0; i < safeDailyTemplates.length; i++) {
+        if (appliesTemplateOnDate(safeDailyTemplates[i], date)) templateCount += 1;
+      }
+      if (templateCount > 0) {
+        map[key] = (map[key] || 0) + templateCount;
+      }
+    }
+
+    return map;
+  }, [selectedYear, selectedMonth, safeEvents, safeDailyTemplates, daysInMonth]);
 
   const prevMonth = () => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1));
   const nextMonth = () => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1));
@@ -208,37 +378,52 @@ export default function CalendarView() {
     setSelectedDate(new Date(selectedDate.getFullYear(), monthValue - 1, 1));
   };
 
-  const deleteEvent   = (id) => setEvents(events.filter((e) => e.id !== id));
-  const deleteExpense = (id) => setExpenses(expenses.filter((e) => e.id !== id));
-  const deleteMeeting = (id) => setMeetings(meetings.filter((m) => m.id !== id));
-  const deleteMemo    = (id) => setMemos(memos.filter((m) => m.id !== id));
+  const deleteEvent   = (id) => setEvents(safeEvents.filter((e) => e.id !== id));
+  const deleteExpense = (id) => setExpenses(safeExpenses.filter((e) => e.id !== id));
+  const deleteMeeting = (id) => setMeetings(safeMeetings.filter((m) => m.id !== id));
+  const deleteMemo    = (id) => setMemos(safeMemos.filter((m) => m.id !== id));
 
   const openModal  = () => { setAddType("event"); setShowAddModal(true); };
   const closeModal = () => {
+    const selectedMonth = selectedDate.getMonth() + 1;
+    const selectedDay = selectedDate.getDate();
+
     setShowAddModal(false);
     setForm({
       title: "",
       description: "",
       category: "일반",
-      visibility: "private",
       showTime: false,
       startTime: "09:00",
       endTime: "10:00",
-      reminderMinutes: notificationSettings.defaultReminderMinutes || 10,
     });
-    setFinanceForm({ title: "", amount: "", type: "expense", category: "식사", memo: "", account: "" });
+    setFinanceForm({
+      title: "",
+      amount: "",
+      type: "expense",
+      category: "식사",
+      memo: "",
+      account: "",
+      salaryStartMonth: selectedMonth,
+      salaryStartDay: selectedDay,
+      salaryEndMonth: selectedMonth,
+      salaryEndDay: selectedDay,
+      budgetAmount: "",
+    });
     setMeetingForm({ title: "", attendees: "", content: "", decisions: "" });
     setMemoForm({ title: "", content: "" });
     setQuickInput("");
+    submitLockRef.current = false;
+    setIsSaving(false);
   };
 
   const addQuickTitle = () => {
     const t = quickInput.trim();
-    if (!t || quickTitles.includes(t)) return;
-    setQuickTitles([...quickTitles, t]);
+    if (!t || safeQuickTitles.includes(t)) return;
+    setQuickTitles([...safeQuickTitles, t]);
     setQuickInput("");
   };
-  const removeQuickTitle = (t) => setQuickTitles(quickTitles.filter((q) => q !== t));
+  const removeQuickTitle = (t) => setQuickTitles(safeQuickTitles.filter((q) => q !== t));
 
   const handleCreateEvent = (e) => {
     e.preventDefault();
@@ -246,17 +431,14 @@ export default function CalendarView() {
     const key = formatDate(selectedDate);
     const s  = form.showTime ? form.startTime : "00:00";
     const en = form.showTime ? form.endTime   : "00:00";
-    setEvents([...events, {
+    setEvents([...safeEvents, {
       id: generateId(),
       title: form.title.trim(),
-      description: form.description.trim(),
-      ownerName: (currentUser?.name || "나").trim() || "나",
-      visibility: form.visibility,
+      description: normalizeNoteText(form.description),
       startDate: new Date(`${key}T${s}`),
       endDate:   new Date(`${key}T${en}`),
       category:  form.category,
       showTime:  form.showTime,
-      reminderMinutes: form.showTime ? Number(form.reminderMinutes || 0) : 0,
       tags: [], isCompleted: false, createdAt: new Date(),
     }]);
     closeModal();
@@ -265,18 +447,25 @@ export default function CalendarView() {
   const handleCreateFinance = (e) => {
     e.preventDefault();
     if (!financeForm.title.trim() || !financeForm.amount) return;
+
     const key = formatDate(selectedDate);
+    const isSalaryIncome = financeForm.type === "income" && financeForm.category === "월급";
+    const salaryUsagePeriod = isSalaryIncome ? buildSalaryUsagePeriod(selectedDate, financeForm) : null;
+
     setExpenses([{
       id: generateId(),
-      title:    financeForm.title.trim(),
-      amount:   Number(financeForm.amount),
-      type:     financeForm.type,
+      title: financeForm.title.trim(),
+      amount: Number(financeForm.amount),
+      type: financeForm.type,
       category: financeForm.category,
-      account:  financeForm.account,
-      memo:     financeForm.memo.trim(),
-      date:     new Date(`${key}T12:00`),
+      account: financeForm.account,
+      memo: normalizeNoteText(financeForm.memo),
+      date: new Date(`${key}T12:00`),
+      budgetPeriodStart: salaryUsagePeriod?.start || null,
+      budgetPeriodEnd: salaryUsagePeriod?.end || null,
+      budgetAmount: isSalaryIncome ? (Number(financeForm.budgetAmount) || 0) : null,
       createdAt: new Date(),
-    }, ...expenses]);
+    }, ...safeExpenses]);
     closeModal();
   };
 
@@ -288,11 +477,11 @@ export default function CalendarView() {
       id: generateId(),
       title:     meetingForm.title.trim(),
       attendees: meetingForm.attendees.trim(),
-      content:   meetingForm.content.trim(),
-      decisions: meetingForm.decisions.trim(),
+      content:   normalizeNoteText(meetingForm.content),
+      decisions: normalizeNoteText(meetingForm.decisions),
       date:      new Date(`${key}T09:00`),
       createdAt: new Date(),
-    }, ...meetings]);
+    }, ...safeMeetings]);
     closeModal();
   };
 
@@ -303,18 +492,31 @@ export default function CalendarView() {
     setMemos([{
       id: generateId(),
       title:   memoForm.title.trim(),
-      content: memoForm.content.trim(),
+      content: normalizeNoteText(memoForm.content),
       date:    new Date(`${key}T12:00`),
       createdAt: new Date(),
-    }, ...memos]);
+    }, ...safeMemos]);
     closeModal();
   };
 
   const handleSubmit = (e) => {
+    if (submitLockRef.current) {
+      e.preventDefault();
+      return;
+    }
+    submitLockRef.current = true;
+    setIsSaving(true);
+
     if      (addType === "event")   handleCreateEvent(e);
     else if (addType === "finance") handleCreateFinance(e);
     else if (addType === "meeting") handleCreateMeeting(e);
     else                            handleCreateMemo(e);
+
+    // 예기치 못한 예외로 closeModal이 누락될 때 잠금을 자동 해제합니다.
+    window.setTimeout(() => {
+      submitLockRef.current = false;
+      setIsSaving(false);
+    }, 800);
   };
 
   const selLabel = selectedDate.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
@@ -334,20 +536,19 @@ export default function CalendarView() {
   };
 
   return (
-    <div className="p-3 max-w-4xl mx-auto pb-6 space-y-3">
+    <div className="mx-auto max-w-5xl space-y-4 px-4 pb-6">
 
-      {/* 네비게이션 */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm border border-white/60 p-4">
+      <div className="section-panel p-5">
         <div className="flex items-center justify-between mb-3">
-          <button onClick={prevPeriod} className="w-9 h-9 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-colors">
+          <button onClick={prevPeriod} className="flex h-10 w-10 items-center justify-center rounded-2xl transition-colors hover:bg-white/80">
             <ChevronLeft size={20} className="text-slate-500" />
           </button>
-          <h2 className="text-lg font-bold text-slate-800">
+          <h2 className="text-xl font-semibold tracking-[-0.04em] text-slate-900">
             {isYearlyMode
               ? `${selectedDate.getFullYear()}년 연간`
               : `${selectedDate.getFullYear()}년 ${selectedDate.getMonth() + 1}월`}
           </h2>
-          <button onClick={nextPeriod} className="w-9 h-9 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-colors">
+          <button onClick={nextPeriod} className="flex h-10 w-10 items-center justify-center rounded-2xl transition-colors hover:bg-white/80">
             <ChevronRight size={20} className="text-slate-500" />
           </button>
         </div>
@@ -355,7 +556,7 @@ export default function CalendarView() {
           <select
             value={selectedDate.getFullYear()}
             onChange={(e) => handleYearChange(Number(e.target.value))}
-            className="w-full py-2 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-200"
+            className="apple-input py-2.5"
           >
             {yearOptions.map((year) => (
               <option key={year} value={year}>{year}년</option>
@@ -364,7 +565,7 @@ export default function CalendarView() {
           <select
             value={isYearlyMode ? 0 : selectedDate.getMonth() + 1}
             onChange={(e) => handleMonthChange(Number(e.target.value))}
-            className="w-full py-2 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-200"
+            className="apple-input py-2.5"
           >
             <option value={0}>00월 (연간 보기)</option>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
@@ -374,11 +575,11 @@ export default function CalendarView() {
         </div>
         <div className="flex gap-2">
           <button onClick={goToday}
-            className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-semibold hover:bg-slate-200 transition-colors text-sm">
+            className="apple-button-secondary flex-1 text-sm">
             오늘
           </button>
           <button onClick={toggleYearlyMode}
-            className={`flex-1 py-2.5 rounded-xl font-semibold transition-colors text-sm ${
+            className={`flex-1 rounded-2xl py-3 font-semibold transition-colors text-sm ${
               isYearlyMode
                 ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
                 : "bg-violet-100 text-violet-700 hover:bg-violet-200"
@@ -387,7 +588,7 @@ export default function CalendarView() {
           </button>
           {!isYearlyMode && (
             <button onClick={openModal}
-              className="flex-[2.5] py-2.5 bg-gradient-to-r from-sky-500 to-indigo-600 text-white rounded-xl font-semibold hover:brightness-105 transition-all flex items-center justify-center gap-1.5 text-sm shadow-sm">
+              className="apple-button flex-[2.5] text-sm">
               <Plus size={16} strokeWidth={2.5} />
               {selLabel}에 기록 추가
             </button>
@@ -396,12 +597,11 @@ export default function CalendarView() {
       </div>
 
       {isYearlyMode ? (
-        <YearlyView selectedYear={selectedDate.getFullYear()} hideYearSelector />
+        <YearlyView selectedYear={selectedDate.getFullYear()} />
       ) : (
         <>
 
-      {/* 달력 그리드 */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm border border-white/60 p-4">
+      <div className="glass-panel rounded-[30px] p-4">
         <div className="grid grid-cols-7 gap-1 mb-1.5">
           {["일","월","화","수","목","금","토"].map((d, i) => (
             <div key={d} className={`text-center text-[11px] font-bold py-1 ${i===0?"text-rose-400":i===6?"text-blue-400":"text-slate-400"}`}>{d}</div>
@@ -411,7 +611,7 @@ export default function CalendarView() {
           {calendarDays.map((date, idx) => {
             const isToday    = date && new Date().toDateString() === date.toDateString();
             const isSelected = date && selectedDate.toDateString() === date.toDateString();
-            const total = getDayTotal(date);
+            const total = date ? (dayTotalMap[formatDate(date)] || 0) : 0;
             const isSun = date && date.getDay() === 0;
             const isSat = date && date.getDay() === 6;
             return (
@@ -452,12 +652,6 @@ export default function CalendarView() {
                   }`}>
                     {ev.isDailyTemplate ? "데일리" : (ev.category || "일반")}
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                    {ev.ownerName || "나"}
-                  </span>
-                  {ev.visibility === "shared" && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">공통</span>
-                  )}
                   {ev.showTime && (
                     <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
                       <Clock size={10} />
@@ -467,15 +661,13 @@ export default function CalendarView() {
                       )}
                     </span>
                   )}
-                  {ev.reminderMinutes > 0 && (
-                    <span className="text-[10px] text-violet-500 flex items-center gap-0.5">
-                      <BellRing size={10} />
-                      {ev.reminderMinutes}분 전 알림
-                    </span>
-                  )}
                 </div>
                 <p className="font-semibold text-slate-800 text-sm leading-snug">{ev.title}</p>
-                {ev.description && <p className="text-xs text-slate-400 mt-1 leading-relaxed">{ev.description}</p>}
+                {ev.description && (
+                  <div className="mt-1 rounded-lg bg-slate-50 px-2 py-1.5">
+                    <p className="text-xs text-slate-500 leading-relaxed whitespace-pre-wrap break-words">{ev.description}</p>
+                  </div>
+                )}
               </div>
               {!ev.isDailyTemplate && (
                 <button onClick={() => deleteEvent(ev.id)}
@@ -506,7 +698,14 @@ export default function CalendarView() {
                 <div className="flex flex-wrap items-center gap-1 mt-0.5">
                   <span className="text-[10px] text-slate-400">{item.category}</span>
                   {item.account && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium">{item.account}</span>}
-                  {item.memo && <span className="text-[10px] text-slate-400">{item.memo}</span>}
+                  {item.budgetPeriodStart && item.budgetPeriodEnd && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-medium">
+                      {new Date(item.budgetPeriodStart).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                      {' ~ '}
+                      {new Date(item.budgetPeriodEnd).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                    </span>
+                  )}
+                  {item.memo && <span className="text-[10px] text-slate-400 whitespace-pre-wrap break-words">{item.memo}</span>}
                 </div>
               </div>
               <p className={`font-bold text-sm shrink-0 ${item.type === "income" ? "text-emerald-600" : "text-rose-500"}`}>
@@ -580,8 +779,8 @@ export default function CalendarView() {
 
       {/* ===== 통합 추가 모달 ===== */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 sm:px-4">
-          <div className="bg-slate-50 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-hidden flex flex-col shadow-2xl">
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-[130] sm:px-4">
+          <div className="bg-slate-50 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-hidden flex flex-col shadow-2xl pb-[max(1rem,env(safe-area-inset-bottom))]">
 
             {/* 모달 헤더 */}
             <div className={`px-5 pt-5 pb-4 flex-shrink-0 bg-gradient-to-br ${GRAD[addType]} text-white`}>
@@ -630,10 +829,10 @@ export default function CalendarView() {
 
                       <FieldBlock label="빠른 입력">
                         <div className="flex flex-wrap gap-1.5 min-h-[28px] mb-2">
-                          {quickTitles.length === 0 && (
+                          {safeQuickTitles.length === 0 && (
                             <span className="text-xs text-slate-300 self-center">아래에서 자주 쓰는 항목을 추가하세요</span>
                           )}
-                          {quickTitles.map((qt) => (
+                          {safeQuickTitles.map((qt) => (
                             <button key={qt} type="button"
                               onClick={() => setForm({ ...form, title: qt })}
                               className="flex items-center gap-1 pl-3 pr-1.5 py-1.5 text-xs rounded-full bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-colors">
@@ -656,7 +855,7 @@ export default function CalendarView() {
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 const t = quickInput.trim();
-                                if (t && !quickTitles.includes(t)) { setQuickTitles([...quickTitles, t]); setQuickInput(""); }
+                                if (t && !safeQuickTitles.includes(t)) { setQuickTitles([...safeQuickTitles, t]); setQuickInput(""); }
                               }
                             }}
                             placeholder="추가할 항목 입력 후 Enter"
@@ -682,27 +881,6 @@ export default function CalendarView() {
                                   : "border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-500"
                               }`}>
                               {cat}
-                            </button>
-                          ))}
-                        </div>
-                      </FieldBlock>
-                    </Card>
-
-                    <Card className="!space-y-0">
-                      <FieldBlock label="추가 범위">
-                        <div className="grid grid-cols-2 gap-2">
-                          {[{ key: "private", label: "나만" }, { key: "shared", label: "공통" }].map((item) => (
-                            <button
-                              key={item.key}
-                              type="button"
-                              onClick={() => setForm({ ...form, visibility: item.key })}
-                              className={`px-3 py-2 text-sm rounded-xl border transition-all ${
-                                form.visibility === item.key
-                                  ? "border-indigo-400 bg-indigo-50 text-indigo-700 font-semibold"
-                                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                              }`}
-                            >
-                              {item.label}
                             </button>
                           ))}
                         </div>
@@ -736,23 +914,8 @@ export default function CalendarView() {
                               className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-sky-200 font-medium" />
                           </div>
                           <div className="col-span-2">
-                            <p className="text-[10px] text-slate-400 font-bold mb-1.5">푸시 알림</p>
-                            <div className="flex gap-2 flex-wrap">
-                              {[0, 10, 30].map((min) => (
-                                <button
-                                  key={min}
-                                  type="button"
-                                  onClick={() => setForm({ ...form, reminderMinutes: min })}
-                                  className={`px-3 py-1.5 text-xs rounded-full border-2 font-bold transition-all ${
-                                    Number(form.reminderMinutes) === min
-                                      ? "border-violet-400 bg-violet-50 text-violet-700"
-                                      : "border-slate-200 text-slate-400 hover:border-slate-300"
-                                  }`}
-                                >
-                                  {min === 0 ? "없음" : `${min}분 전`}
-                                </button>
-                              ))}
-                            </div>
+                            <p className="text-[10px] text-slate-400 font-bold mb-1.5">시간 안내</p>
+                            <p className="text-xs text-slate-400">시작/종료 시간만 저장됩니다.</p>
                           </div>
                         </div>
                       ) : (
@@ -780,7 +943,11 @@ export default function CalendarView() {
                         { type: "income",  label: "수입", accentOn: "border-emerald-400 bg-emerald-50 text-emerald-700", Icon: TrendingUp },
                       ].map(({ type, label, accentOn, Icon }) => (
                         <button key={type} type="button"
-                          onClick={() => setFinanceForm({ ...financeForm, type, category: type === "expense" ? "식사" : "월급" })}
+                          onClick={() => setFinanceForm({
+                            ...financeForm,
+                            type,
+                            category: type === "expense" ? "식사" : "월급",
+                          })}
                           className={`py-5 rounded-2xl border-2 font-bold text-sm flex flex-col items-center gap-2 transition-all ${
                             financeForm.type === type ? accentOn : "border-slate-200 text-slate-300 hover:border-slate-300 bg-white"
                           }`}>
@@ -804,10 +971,10 @@ export default function CalendarView() {
                           className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-200 font-medium"
                           placeholder="0" />
                       </FieldBlock>
-                      {accounts.length > 0 && (
+                      {safeAccounts.length > 0 && (
                         <FieldBlock label="통장 / 결제 수단">
                           <div className="flex flex-wrap gap-1.5">
-                            {accounts.map((acc) => (
+                            {safeAccounts.map((acc) => (
                               <button key={acc} type="button"
                                 onClick={() => setFinanceForm({ ...financeForm, account: financeForm.account === acc ? "" : acc })}
                                 className={`px-3 py-1.5 text-xs rounded-full border-2 font-bold transition-all ${
@@ -842,6 +1009,76 @@ export default function CalendarView() {
                         </div>
                       </FieldBlock>
                     </Card>
+
+                    {financeForm.type === "income" && financeForm.category === "월급" && (
+                      <Card className="!space-y-0">
+                        <FieldBlock label="월급 사용 기간">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <p className="mb-2 text-[10px] font-bold text-slate-400">시작 월/일</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <select
+                                  value={financeForm.salaryStartMonth}
+                                  onChange={(e) => setFinanceForm({ ...financeForm, salaryStartMonth: Number(e.target.value) })}
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                                >
+                                  {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                                    <option key={`start-month-${month}`} value={month}>{month}월</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={financeForm.salaryStartDay}
+                                  onChange={(e) => setFinanceForm({ ...financeForm, salaryStartDay: Number(e.target.value) })}
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                                >
+                                  {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                                    <option key={`start-day-${day}`} value={day}>{day}일</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <p className="mb-2 text-[10px] font-bold text-slate-400">종료 월/일</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <select
+                                  value={financeForm.salaryEndMonth}
+                                  onChange={(e) => setFinanceForm({ ...financeForm, salaryEndMonth: Number(e.target.value) })}
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                                >
+                                  {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                                    <option key={`end-month-${month}`} value={month}>{month}월</option>
+                                  ))}
+                                </select>
+                                <select
+                                  value={financeForm.salaryEndDay}
+                                  onChange={(e) => setFinanceForm({ ...financeForm, salaryEndDay: Number(e.target.value) })}
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                                >
+                                  {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                                    <option key={`end-day-${day}`} value={day}>{day}일</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-slate-400">월급 카테고리일 때만 사용 기간이 저장되고, 가계부는 이 기간을 기준으로 자동 계산됩니다.</p>
+                          <div className="mt-3">
+                            <p className="mb-1.5 text-[10px] font-bold text-slate-400">예산 금액 (선택)</p>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                value={financeForm.budgetAmount}
+                                onChange={(e) => setFinanceForm({ ...financeForm, budgetAmount: e.target.value })}
+                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                                placeholder="이 기간에 쓸 예정 금액"
+                              />
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">원</span>
+                            </div>
+                          </div>
+                        </FieldBlock>
+                      </Card>
+                    )}
 
                     <Card className="!space-y-0">
                       <FieldBlock label="메모 (선택)">
@@ -911,15 +1148,18 @@ export default function CalendarView() {
                 )}
 
                 {/* 저장/취소 버튼 */}
-                <div className="flex gap-2 pt-1 pb-3">
+                <div className="sticky bottom-0 z-20 mx-[-16px] mt-1 border-t border-slate-200/70 bg-slate-50/98 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
+                  <div className="flex gap-2">
                   <button type="button" onClick={closeModal}
                     className="flex-1 py-3.5 border-2 border-slate-200 rounded-2xl text-slate-500 font-bold text-sm hover:bg-white transition-colors">
                     취소
                   </button>
                   <button type="submit"
-                    className={`flex-[2] py-3.5 text-white rounded-2xl font-bold text-sm bg-gradient-to-r ${GRAD[addType]} hover:brightness-105 transition-all shadow-sm`}>
-                    저장하기
+                    disabled={isSaving}
+                    className={`flex-[2] py-3.5 text-white rounded-2xl font-bold text-sm bg-gradient-to-r ${GRAD[addType]} transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed hover:brightness-105`}>
+                    {isSaving ? "저장 중..." : "저장하기"}
                   </button>
+                  </div>
                 </div>
 
               </form>

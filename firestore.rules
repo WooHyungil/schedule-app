@@ -1,12 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isEmailOnlyUserId(userId) {
-      return userId.matches('^local_[A-Za-z0-9_-]+$');
+    function isEmailWorkspaceId(userId) {
+      return userId.matches('^email_[A-Za-z0-9_-]+$');
     }
 
-    function isGlobalWorkspaceId(userId) {
-      return userId.matches('^global_[A-Za-z0-9_-]+$');
+    function isEmailOnlyUserId(userId) {
+      return userId.matches('^local_[A-Za-z0-9_-]+$');
     }
 
     function isSignedIn() {
@@ -17,12 +17,17 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isAnyWorkspaceId(userId) {
+      return isEmailWorkspaceId(userId) || isEmailOnlyUserId(userId);
+    }
+
     match /users/{userId} {
-      allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId) || isGlobalWorkspaceId(userId);
+      allow read, write: if isOwner(userId) || isAnyWorkspaceId(userId);
 
       match /{document=**} {
-        allow read, write: if isOwner(userId) || isEmailOnlyUserId(userId) || isGlobalWorkspaceId(userId);
+        allow read, write: if isOwner(userId) || isAnyWorkspaceId(userId);
       }
     }
+
   }
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "287301578880",
+    "project_id": "schedule-app-46575",
+    "storage_bucket": "schedule-app-46575.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:287301578880:android:4f289a1f20ce382281f665",
+        "android_client_info": {
+          "package_name": "com.hyungil.schedule"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFMLfY3p71ugplJpoAhHf398LrswIg7sc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

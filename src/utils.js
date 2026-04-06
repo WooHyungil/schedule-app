@@ -1,28 +1,47 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-const STORAGE_EVENT = 'schedule-storage-change';
+export const STORAGE_EVENT = 'schedule-storage-change';
+
+export const emitStorageChange = (key, value) => {
+  window.dispatchEvent(
+    new CustomEvent(STORAGE_EVENT, {
+      detail: { key, value },
+    })
+  );
+};
+
+const stableStringify = (value) => {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return '';
+  }
+};
 
 export const useStorage = (key, initialValue) => {
+  const initialRef = useRef(initialValue);
   const [storedValue, setStoredValue] = useState(() => {
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+      return item ? JSON.parse(item) : initialRef.current;
     } catch (error) {
       console.log(error);
-      return initialValue;
+      return initialRef.current;
     }
   });
 
   const setValue = (value) => {
     try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-      window.dispatchEvent(
-        new CustomEvent(STORAGE_EVENT, {
-          detail: { key, value: valueToStore },
-        })
-      );
+      setStoredValue((prevValue) => {
+        const valueToStore = value instanceof Function ? value(prevValue) : value;
+        const prevHash = stableStringify(prevValue);
+        const nextHash = stableStringify(valueToStore);
+        if (prevHash === nextHash) return prevValue;
+
+        window.localStorage.setItem(key, nextHash);
+        emitStorageChange(key, valueToStore);
+        return valueToStore;
+      });
     } catch (error) {
       console.log(error);
     }
@@ -30,13 +49,19 @@ export const useStorage = (key, initialValue) => {
 
   useEffect(() => {
     const syncFromStorage = (nextValue) => {
-      setStoredValue(nextValue === undefined ? initialValue : nextValue);
+      const resolvedValue = nextValue === undefined ? initialRef.current : nextValue;
+      setStoredValue((prevValue) => {
+        if (stableStringify(prevValue) === stableStringify(resolvedValue)) {
+          return prevValue;
+        }
+        return resolvedValue;
+      });
     };
 
     const handleStorage = (event) => {
       if (event.key !== key) return;
       if (event.newValue == null) {
-        syncFromStorage(initialValue);
+        syncFromStorage(initialRef.current);
         return;
       }
 
@@ -59,7 +84,7 @@ export const useStorage = (key, initialValue) => {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener(STORAGE_EVENT, handleCustomStorage);
     };
-  }, [initialValue, key]);
+  }, [key]);
 
   return [storedValue, setValue];
 };

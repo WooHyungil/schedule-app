@@ -1,69 +1,97 @@
-import { useEffect, useState } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, Repeat2, CheckCircle2, Settings, Wallet, Download } from 'lucide-react';
-import CalendarView from './components/CalendarView';
-import DailyView from './components/DailyView';
-import TodoView from './components/TodoView';
-import SettingsView from './components/SettingsView';
-import FinanceView from './components/FinanceView';
 import OnboardingView from './components/OnboardingView';
 import { useCloudSync } from './hooks/useCloudSync';
+import { appStabilityAgent } from './services/appStabilityAgent';
 import { useStorage } from './utils';
+
+const loadCalendarView = () => import('./components/CalendarView');
+const loadDailyView = () => import('./components/DailyView');
+const loadTodoView = () => import('./components/TodoView');
+const loadFinanceView = () => import('./components/FinanceView');
+const loadSettingsView = () => import('./components/SettingsView');
+
+const CalendarView = lazy(loadCalendarView);
+const DailyView = lazy(loadDailyView);
+const TodoView = lazy(loadTodoView);
+const FinanceView = lazy(loadFinanceView);
+const SettingsView = lazy(loadSettingsView);
+
+function TabFallback() {
+  return <div className="mx-auto max-w-5xl px-4 py-10 text-sm text-slate-400">화면을 불러오는 중...</div>;
+}
+
+class TabErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.error('Tab render error:', error);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+
+    return (
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        <div className="glass-panel rounded-[24px] p-5 text-center">
+          <p className="text-sm font-semibold text-slate-700">화면 로딩 중 오류가 발생했습니다.</p>
+          <button
+            type="button"
+            onClick={this.props.onRecover}
+            className="mt-3 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+          >
+            달력으로 돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [installPrompt, setInstallPrompt] = useState(null);
-  const [events] = useStorage('events', []);
-  const [notificationSettings] = useStorage('notificationSettings', { enabled: false, defaultReminderMinutes: 10 });
   const [currentUser, setCurrentUser] = useStorage('currentUser', null);
-  const [shareConnections] = useStorage('shareConnections', []);
   const syncState = useCloudSync();
 
-  useEffect(() => {
-    if (!notificationSettings?.enabled) return;
-    if (typeof window === 'undefined' || !("Notification" in window)) return;
-    if (Notification.permission !== 'granted') return;
+  const contentRef = useRef(null);
+  const pullStartYRef = useRef(0);
+  const pullingRef = useRef(false);
+  const pullRafRef = useRef(null);
+  const pullDistanceRef = useRef(0);
+  const pullArmedRef = useRef(false);
+  const pullCooldownRef = useRef(0);
+  const pullEndTimerRef = useRef(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pullArmed, setPullArmed] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const pullThreshold = 72;
 
-    const maxTimeout = 2147483647;
-    window.__scheduleReminderTimers = window.__scheduleReminderTimers || new Map();
-    const timers = window.__scheduleReminderTimers;
-
-    timers.forEach((timerId) => window.clearTimeout(timerId));
-    timers.clear();
-
-    const now = Date.now();
-
-    events.forEach((evt) => {
-      if (!evt?.showTime) return;
-      const reminderMinutes = Number(evt?.reminderMinutes || 0);
-      if (!reminderMinutes) return;
-
-      const startMs = new Date(evt.startDate).getTime();
-      if (Number.isNaN(startMs)) return;
-
-      const triggerMs = startMs - reminderMinutes * 60 * 1000;
-      const delay = triggerMs - now;
-
-      if (delay <= 0 || delay > maxTimeout) return;
-
-      const key = `${evt.id}-${startMs}-${reminderMinutes}`;
-      const timerId = window.setTimeout(() => {
-        new Notification('일정 알림', {
-          body: `${evt.title} · ${reminderMinutes}분 전입니다`,
-          icon: '/icon-192.svg',
-          tag: 'schedule-reminder',
-          requireInteraction: false,
-        });
-        timers.delete(key);
-      }, delay);
-
-      timers.set(key, timerId);
-    });
-
-    return () => {
-      timers.forEach((timerId) => window.clearTimeout(timerId));
-      timers.clear();
-    };
-  }, [events, notificationSettings?.enabled]);
+  const resetPullState = useCallback(() => {
+    if (pullRafRef.current) {
+      window.cancelAnimationFrame(pullRafRef.current);
+      pullRafRef.current = null;
+    }
+    pullingRef.current = false;
+    pullDistanceRef.current = 0;
+    pullArmedRef.current = false;
+    setPullDistance(0);
+    setPullArmed(false);
+  }, []);
 
   useEffect(() => {
     const onBeforeInstallPrompt = (event) => {
@@ -82,6 +110,22 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    appStabilityAgent.sanitizeAllStorage();
+    const stopMaintenance = appStabilityAgent.startBackgroundMaintenance();
+    const stopGuards = appStabilityAgent.setupRuntimeGuards(() => {
+      setActiveTab(0);
+      setRefreshTick((prev) => prev + 1);
+    });
+
+    return () => {
+      stopMaintenance();
+      stopGuards();
+    };
+  }, []);
+
   const installApp = async () => {
     if (!installPrompt) return;
     installPrompt.prompt();
@@ -93,26 +137,20 @@ export default function App() {
     return <OnboardingView onComplete={setCurrentUser} />;
   }
 
-  const myNickname = (currentUser?.name || '').trim() || '나';
-  const partnerNicknames = Array.from(
-    new Set(
-      (shareConnections || [])
-        .map((item) => (item?.nickname || '').trim())
-        .filter(Boolean)
-    )
-  );
-  const titleNames = partnerNicknames.length > 0 ? [myNickname, ...partnerNicknames] : [myNickname];
-  const appTitle = titleNames.length > 1 ? `${titleNames.join('&')}의 스케줄` : `스케줄`;
+  const appTitle = '스케줄';
 
-  const tabs = [
+  const handleLogout = useCallback(() => {
+    setCurrentUser(null);
+  }, [setCurrentUser]);
+
+  const tabs = useMemo(() => [
     { icon: Calendar, label: '달력', component: CalendarView },
     { icon: Repeat2, label: '데일리', component: DailyView },
     { icon: CheckCircle2, label: '할일', component: TodoView },
     { icon: Wallet, label: '가계부', component: FinanceView },
-    { icon: Settings, label: '설정', component: SettingsView },
-  ];
+    { icon: Settings, label: '설정', component: SettingsView, componentProps: { onLogout: handleLogout } },
+  ], [handleLogout]);
 
-  const CurrentComponent = tabs[activeTab].component;
   const syncLabel =
     syncState.status === 'online'
       ? '클라우드 연결됨'
@@ -130,14 +168,131 @@ export default function App() {
         ? 'bg-rose-100 text-rose-700'
         : 'bg-sky-100 text-sky-700';
 
+  const openTab = useCallback((index) => {
+    if (index === activeTab) return;
+    if (pullEndTimerRef.current) {
+      window.clearTimeout(pullEndTimerRef.current);
+      pullEndTimerRef.current = null;
+    }
+    setIsRefreshing(false);
+    resetPullState();
+    setActiveTab(index);
+  }, [activeTab, resetPullState]);
+
+  const triggerPullRefresh = useCallback(() => {
+    const now = Date.now();
+    if (now - pullCooldownRef.current < 1200) return;
+    pullCooldownRef.current = now;
+
+    if (pullEndTimerRef.current) {
+      window.clearTimeout(pullEndTimerRef.current);
+      pullEndTimerRef.current = null;
+    }
+
+    setIsRefreshing(true);
+    setRefreshTick((prev) => prev + 1);
+    pullEndTimerRef.current = window.setTimeout(() => {
+      setIsRefreshing(false);
+      pullEndTimerRef.current = null;
+    }, 900);
+  }, []);
+
+  useEffect(() => {
+    const scroller = contentRef.current;
+    if (!scroller) return undefined;
+
+    const commitPullState = (nextDistance) => {
+      const nextArmed = nextDistance >= pullThreshold;
+
+      if (Math.abs(nextDistance - pullDistanceRef.current) >= 4) {
+        pullDistanceRef.current = nextDistance;
+        setPullDistance(nextDistance);
+      }
+
+      if (nextArmed !== pullArmedRef.current) {
+        pullArmedRef.current = nextArmed;
+        setPullArmed(nextArmed);
+      }
+    };
+
+    const onTouchStart = (event) => {
+      if (isRefreshing) return;
+      if (scroller.scrollTop > 0) return;
+      pullStartYRef.current = event.touches?.[0]?.clientY || 0;
+      pullingRef.current = true;
+    };
+
+    const onTouchMove = (event) => {
+      if (!pullingRef.current || isRefreshing) return;
+      if (scroller.scrollTop > 0) {
+        resetPullState();
+        return;
+      }
+
+      const currentY = event.touches?.[0]?.clientY || 0;
+      const delta = currentY - pullStartYRef.current;
+
+      if (delta <= 0) {
+        commitPullState(0);
+        return;
+      }
+
+      if (event.cancelable) event.preventDefault();
+
+      const nextDistance = Math.min(112, delta * 0.5);
+      if (pullRafRef.current) return;
+
+      pullRafRef.current = window.requestAnimationFrame(() => {
+        pullRafRef.current = null;
+        commitPullState(nextDistance);
+      });
+    };
+
+    const onTouchEnd = () => {
+      if (pullingRef.current && pullArmedRef.current && !isRefreshing) {
+        triggerPullRefresh();
+      }
+      resetPullState();
+    };
+
+    scroller.addEventListener('touchstart', onTouchStart, { passive: true });
+    scroller.addEventListener('touchmove', onTouchMove, { passive: false });
+    scroller.addEventListener('touchend', onTouchEnd, { passive: true });
+    scroller.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      scroller.removeEventListener('touchstart', onTouchStart);
+      scroller.removeEventListener('touchmove', onTouchMove);
+      scroller.removeEventListener('touchend', onTouchEnd);
+      scroller.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [isRefreshing, pullThreshold, resetPullState, triggerPullRefresh]);
+
+  useEffect(() => {
+    return () => {
+      if (pullEndTimerRef.current) {
+        window.clearTimeout(pullEndTimerRef.current);
+        pullEndTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const ActiveTabComponent = tabs[activeTab]?.component;
+  const activeTabProps = tabs[activeTab]?.componentProps || {};
+
   return (
-    <div className="app-shell flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-white/50 bg-white/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+    <div className="app-shell relative flex min-h-screen flex-col overflow-x-hidden">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -left-24 -top-28 h-80 w-80 rounded-full bg-[radial-gradient(circle,#dbeafe_0%,#dbeafe00_72%)]" />
+        <div className="absolute -right-28 top-20 h-96 w-96 rounded-full bg-[radial-gradient(circle,#e2e8f0_0%,#e2e8f000_72%)]" />
+        <div className="absolute bottom-0 left-1/2 h-64 w-[34rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,#f8fafc_0%,#f8fafc00_75%)]" />
+      </div>
+      <header className="sticky top-0 z-40 px-3 pt-3 sm:px-4">
+        <div className="glass-panel-strong mx-auto flex max-w-5xl items-center justify-between gap-3 rounded-[30px] border border-white/70 px-4 py-3 shadow-[0_16px_32px_rgba(15,23,42,0.08)]" style={{ paddingTop: 'max(0.9rem, env(safe-area-inset-top))' }}>
           <div className="min-w-0">
-            <p className="truncate text-base font-semibold tracking-tight text-slate-800">{appTitle}</p>
+            <p className="truncate text-xl font-semibold tracking-[-0.04em] text-slate-950">{appTitle}</p>
             <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
-              <span className={`rounded-full px-2 py-1 font-semibold ${syncTone}`}>{syncLabel}</span>
+              <span className={`rounded-full px-2.5 py-1 font-semibold shadow-sm ${syncTone}`}>{syncLabel}</span>
               {syncState.lastSyncedAt && <span>최근 반영 {new Date(syncState.lastSyncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>}
             </div>
           </div>
@@ -146,51 +301,62 @@ export default function App() {
               <button
                 type="button"
                 onClick={installApp}
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2.5 py-1 text-xs text-white transition-colors hover:bg-indigo-700"
+                className="apple-button px-3 py-2 text-xs"
               >
                 <Download size={12} /> 앱 설치
               </button>
             )}
             <div className="flex items-center gap-2">
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600 font-medium">{currentUser.name}</span>
+              <span className="apple-chip px-3 py-1.5 text-xs">{currentUser.name}</span>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-4xl px-3 pt-3 sm:px-4">
-        <div className="overflow-hidden rounded-[28px] border border-white/60 bg-white/35 p-3 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm">
-          <div className="rounded-[24px] bg-[linear-gradient(180deg,rgba(255,255,255,0.68),rgba(255,255,255,0.88))]">
-            <div className="px-4 pb-2 pt-4 sm:px-5">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="rounded-full bg-white px-2.5 py-1 font-medium shadow-sm">일정</span>
-                <span className="rounded-full bg-white px-2.5 py-1 font-medium shadow-sm">데일리</span>
-                <span className="rounded-full bg-white px-2.5 py-1 font-medium shadow-sm">가계부</span>
-              </div>
-            </div>
-          </div>
+      <div
+        ref={contentRef}
+        className="flex-1 overflow-y-auto pb-28 pt-3"
+        style={{ overscrollBehaviorY: 'contain', WebkitOverflowScrolling: 'touch' }}
+      >
+        <div
+          className="pointer-events-none mx-auto mb-1 flex max-w-5xl items-center justify-center"
+          style={{
+            height: pullDistance > 0 ? Math.min(48, pullDistance) : 0,
+            opacity: pullDistance > 8 ? 1 : 0,
+            transition: pullDistance > 0 ? 'none' : 'height 180ms ease, opacity 180ms ease',
+          }}
+        >
+          <span className={`rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold shadow-sm ${pullArmed ? 'text-emerald-600' : 'text-slate-500'}`}>
+            {isRefreshing ? '새로고침 중...' : pullArmed ? '놓으면 새로고침' : '아래로 당겨 새로고침'}
+          </span>
         </div>
+        <Suspense fallback={<TabFallback />}>
+          <TabErrorBoundary resetKey={activeTab} onRecover={() => setActiveTab(0)}>
+            {ActiveTabComponent ? <ActiveTabComponent key={`${activeTab}-${refreshTick}`} {...activeTabProps} /> : <TabFallback />}
+          </TabErrorBoundary>
+        </Suspense>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-28 pt-2">
-        {activeTab === 4 ? <CurrentComponent onLogout={() => setCurrentUser(null)} /> : <CurrentComponent />}
-      </div>
-
-      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-slate-900/10 to-transparent px-3 pt-2" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
-        <div className="mx-auto flex max-w-4xl gap-1.5 rounded-3xl border border-white/70 bg-white/82 p-1.5 shadow-[0_12px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+      <div className="fixed bottom-0 left-0 right-0 z-[120] bg-gradient-to-t from-slate-900/10 via-slate-900/2 to-transparent px-3 pt-2" style={{ paddingBottom: 'calc(0.8rem + env(safe-area-inset-bottom))' }}>
+        <div className="glass-panel-strong mx-auto flex max-w-5xl gap-1.5 rounded-[30px] border border-white/70 p-1.5 shadow-[0_20px_44px_rgba(15,23,42,0.12)]">
           {tabs.map((tab, index) => {
             const Icon = tab.icon;
             return (
               <button
+                type="button"
                 key={index}
-                onClick={() => setActiveTab(index)}
-                className={`flex-1 py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all duration-200 ${
+                onClick={() => openTab(index)}
+                onTouchStart={() => openTab(index)}
+                className={`flex-1 rounded-[22px] px-2 py-3.5 flex flex-col items-center justify-center gap-1 transition-all duration-200 relative ${
                   activeTab === index
-                    ? 'text-sky-700 bg-gradient-to-b from-sky-100 to-sky-50 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/70'
+                    ? 'text-slate-950 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
                 }`}
+                style={{ touchAction: 'manipulation' }}
               >
-                <Icon size={20} />
+                <div className={`flex h-9 w-9 items-center justify-center rounded-2xl ${activeTab === index ? 'bg-sky-50 text-sky-600' : 'bg-transparent'}`}>
+                  <Icon size={19} />
+                </div>
                 <span className="text-[11px] font-semibold tracking-tight">{tab.label}</span>
               </button>
             );

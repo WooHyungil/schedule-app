@@ -14,14 +14,13 @@ const DAY_OPTIONS = [
 
 export default function DailyView() {
   const [dailyTemplates, setDailyTemplates] = useStorage('dailyTemplates', []);
-  const [currentUser] = useStorage('currentUser', null);
+  const safeDailyTemplates = Array.isArray(dailyTemplates) ? dailyTemplates : [];
   const [form, setForm] = useState({
     title: '',
     description: '',
     mode: 'daily',
     weekDays: [1, 3, 5],
     monthDay: 1,
-    visibility: 'private',
     onlyThisMonth: false,
     showTime: false,
     time: '09:00',
@@ -43,8 +42,6 @@ export default function DailyView() {
       id: generateId(),
       title: form.title.trim(),
       description: form.description.trim(),
-      ownerName: (currentUser?.name || '나').trim() || '나',
-      visibility: form.visibility,
       rule: {
         mode: form.mode,
         days: form.mode === 'weekly' ? form.weekDays : [],
@@ -58,14 +55,13 @@ export default function DailyView() {
       createdAt: new Date(),
     };
 
-    setDailyTemplates([newTemplate, ...dailyTemplates]);
+    setDailyTemplates([newTemplate, ...safeDailyTemplates]);
     setForm({
       title: '',
       description: '',
       mode: 'daily',
       weekDays: [1, 3, 5],
       monthDay: 1,
-      visibility: 'private',
       onlyThisMonth: false,
       showTime: false,
       time: '09:00',
@@ -73,7 +69,7 @@ export default function DailyView() {
   };
 
   const removeTemplate = (id) => {
-    setDailyTemplates(dailyTemplates.filter((item) => item.id !== id));
+    setDailyTemplates(safeDailyTemplates.filter((item) => item.id !== id));
   };
 
   const toggleWeekDay = (day) => {
@@ -97,29 +93,22 @@ export default function DailyView() {
   };
 
   return (
-    <div className="p-4 max-w-4xl mx-auto space-y-4">
-      <div className="bg-white/90 backdrop-blur rounded-2xl shadow-sm border border-slate-100 p-4">
-        <h2 className="text-lg font-bold text-slate-800">데일리 기본 일정</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          반복 규칙(매일/주말/날짜 선택)으로 자동 생성할 기본 일정을 설정합니다.
-        </p>
-      </div>
-
-      <form onSubmit={addTemplate} className="bg-white/90 backdrop-blur rounded-2xl shadow-sm border border-slate-100 p-4 space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4 px-4">
+      <form onSubmit={addTemplate} className="glass-panel rounded-[30px] p-5 space-y-4">
         <div>
-          <label className="block text-sm font-semibold mb-2 text-slate-700">일정 제목</label>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">일정 제목</label>
           <input
             type="text"
             required
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
             placeholder="예: 아침 스트레칭"
-            className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-300 focus:border-sky-400"
+            className="apple-input"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold mb-2 text-slate-700">반복 규칙</label>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">반복 규칙</label>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             {[
               { key: 'daily', label: '매일' },
@@ -132,10 +121,10 @@ export default function DailyView() {
                 key={mode.key}
                 type="button"
                 onClick={() => setForm({ ...form, mode: mode.key })}
-                className={`px-3 py-2 text-sm rounded-xl border transition-all ${
+                className={`rounded-2xl px-3 py-3 text-sm transition-all ${
                   form.mode === mode.key
-                    ? 'border-sky-500 bg-sky-50 text-sky-700 font-semibold'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-200 font-semibold'
+                    : 'bg-white/80 text-slate-600 ring-1 ring-slate-200 hover:bg-white'
                 }`}
               >
                 {mode.label}
@@ -145,39 +134,19 @@ export default function DailyView() {
           <p className="mt-2 text-xs text-slate-500">현재 선택: {ruleLabel}</p>
         </div>
 
-        <div>
-          <label className="block text-sm font-semibold mb-2 text-slate-700">추가 범위</label>
-          <div className="grid grid-cols-2 gap-2">
-            {[{ key: 'private', label: '나만' }, { key: 'shared', label: '공통' }].map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setForm({ ...form, visibility: item.key })}
-                className={`px-3 py-2 text-sm rounded-xl border transition-all ${
-                  form.visibility === item.key
-                    ? 'border-indigo-400 bg-indigo-50 text-indigo-700 font-semibold'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {form.mode === 'weekly' && (
           <div>
-            <label className="block text-sm font-semibold mb-2 text-slate-700">요일 선택</label>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">요일 선택</label>
             <div className="flex flex-wrap gap-2">
               {DAY_OPTIONS.map((day) => (
                 <button
                   key={day.value}
                   type="button"
                   onClick={() => toggleWeekDay(day.value)}
-                  className={`px-3 py-2 text-sm rounded-lg border ${
+                  className={`rounded-2xl px-3 py-2 text-sm ${
                     form.weekDays.includes(day.value)
-                      ? 'border-sky-500 bg-sky-100 text-sky-700'
-                      : 'border-slate-200 bg-white text-slate-600'
+                      ? 'bg-sky-100 text-sky-700 ring-1 ring-sky-200'
+                      : 'bg-white text-slate-600 ring-1 ring-slate-200'
                   }`}
                 >
                   {day.label}
@@ -189,25 +158,25 @@ export default function DailyView() {
 
         {form.mode === 'monthly-date' && (
           <div>
-            <label className="block text-sm font-semibold mb-2 text-slate-700">매월 날짜</label>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">매월 날짜</label>
             <input
               type="number"
               min="1"
               max="31"
               value={form.monthDay}
               onChange={(e) => setForm({ ...form, monthDay: Number(e.target.value || 1) })}
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-300 focus:border-sky-400"
+              className="apple-input"
             />
           </div>
         )}
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+        <div className="soft-card rounded-[24px] px-4 py-3">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
               checked={form.onlyThisMonth}
               onChange={(e) => setForm({ ...form, onlyThisMonth: e.target.checked })}
-              className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-300"
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-300"
             />
             이번 달에만 적용
           </label>
@@ -223,7 +192,7 @@ export default function DailyView() {
             <button
               type="button"
               onClick={() => setForm({ ...form, showTime: !form.showTime })}
-              className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${form.showTime ? 'bg-sky-500' : 'bg-slate-200'}`}
+              className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${form.showTime ? 'bg-sky-500' : 'bg-slate-200'}`}
             >
               <span
                 className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200 ${form.showTime ? 'left-[22px]' : 'left-0.5'}`}
@@ -235,49 +204,43 @@ export default function DailyView() {
               type="time"
               value={form.time}
               onChange={(e) => setForm({ ...form, time: e.target.value })}
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-300 focus:border-sky-400 mb-4"
+              className="apple-input mb-4"
             />
           )}
         </div>
         <div>
-          <label className="block text-sm font-semibold mb-2 text-slate-700">메모 (선택)</label>
+          <label className="mb-2 block text-sm font-semibold text-slate-700">메모 (선택)</label>
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             rows="3"
             placeholder="데일리 일정에 대한 메모"
-            className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-300 focus:border-sky-400"
+            className="apple-input min-h-[96px]"
           />
         </div>
 
         <button
           type="submit"
-          className="w-full py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl hover:brightness-110 font-semibold flex items-center justify-center gap-2"
+          className="apple-button w-full"
         >
           <Plus size={18} />
           데일리 일정 추가
         </button>
       </form>
 
-      <div className="bg-white/90 backdrop-blur rounded-2xl shadow-sm border border-slate-100 p-4">
-        <h3 className="font-semibold text-slate-800 mb-3">현재 데일리 목록 ({dailyTemplates.length})</h3>
+      <div className="glass-panel rounded-[30px] p-5">
+        <h3 className="text-lg font-semibold tracking-[-0.03em] text-slate-900 mb-3">현재 데일리 목록 ({safeDailyTemplates.length})</h3>
 
-        {dailyTemplates.length === 0 ? (
+        {safeDailyTemplates.length === 0 ? (
           <p className="text-sm text-slate-500 py-4 text-center">아직 데일리 일정이 없습니다.</p>
         ) : (
           <div className="space-y-2">
-            {dailyTemplates.map((item) => (
-              <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-start justify-between gap-3">
+            {safeDailyTemplates.map((item) => (
+              <div key={item.id} className="soft-card flex items-start justify-between gap-3 rounded-[24px] p-4">
                 <div>
                   <p className="font-medium text-slate-900">{item.title}</p>
                   <div className="flex items-center gap-2 flex-wrap mt-1">
                     <span className="text-xs text-sky-700">{getRuleText(item)}</span>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                      {item.ownerName || '나'}
-                    </span>
-                    {item.visibility === 'shared' && (
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">공통</span>
-                    )}
                     {item.showTime && item.time && (
                       <span className="text-xs text-slate-500 flex items-center gap-0.5">
                         <Clock size={10} />

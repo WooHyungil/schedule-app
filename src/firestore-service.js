@@ -9,7 +9,6 @@ import {
   updateDoc,
   writeBatch,
   serverTimestamp,
-  arrayUnion,
 } from 'firebase/firestore';
 import { db } from './firebase-config';
 
@@ -269,41 +268,6 @@ export async function deleteEvent(userId, eventId) {
   }
 }
 
-/**
- * 공유 연결 추가
- */
-export async function addShareConnection(userId, friendData) {
-  try {
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      shareConnections: arrayUnion(friendData),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Error adding share connection:', error);
-    throw error;
-  }
-}
-
-/**
- * 공유 연결 제거
- */
-export async function removeShareConnection(userId, friendEmail) {
-  try {
-    const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
-    const shareConnections = userSnap.data()?.shareConnections || [];
-    const filtered = shareConnections.filter((conn) => conn.email !== friendEmail);
-    
-    await updateDoc(userRef, {
-      shareConnections: filtered,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Error removing share connection:', error);
-    throw error;
-  }
-}
 
 /**
  * 일일 템플릿 생성
@@ -536,3 +500,4 @@ export async function syncUserData(userId, data) {
     throw error;
   }
 }
+

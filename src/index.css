@@ -3,10 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --bg-1: #e7f2ff;
-  --bg-2: #f8fbff;
-  --bg-3: #fff8ef;
-  --text-main: #0f172a;
+  --bg-1: #eef3fb;
+  --bg-2: #f7f9fd;
+  --bg-3: #fcfdff;
+  --bg-4: #e8f0ff;
+  --text-main: #101828;
+  --text-soft: #667085;
+  --glass-strong: rgba(255, 255, 255, 0.74);
+  --glass-soft: rgba(255, 255, 255, 0.52);
+  --line-soft: rgba(255, 255, 255, 0.62);
+  --line-hard: rgba(148, 163, 184, 0.16);
+  --shadow-soft: 0 24px 60px rgba(15, 23, 42, 0.08);
+  --shadow-float: 0 18px 45px rgba(15, 23, 42, 0.12);
+  --accent-blue: #1677ff;
 }
 
 * {
@@ -22,11 +31,12 @@ body {
 
 body {
   background:
-    radial-gradient(circle at 10% 10%, rgba(56, 189, 248, 0.22), transparent 28%),
-    radial-gradient(circle at 92% 82%, rgba(251, 191, 36, 0.18), transparent 25%),
-    linear-gradient(135deg, var(--bg-1), var(--bg-2) 55%, var(--bg-3));
+    radial-gradient(circle at 14% 14%, rgba(96, 165, 250, 0.2), transparent 26%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.85), transparent 24%),
+    radial-gradient(circle at 85% 78%, rgba(191, 219, 254, 0.55), transparent 28%),
+    linear-gradient(180deg, var(--bg-4) 0%, var(--bg-2) 38%, var(--bg-3) 100%);
   color: var(--text-main);
-  font-family: 'Pretendard', 'SUIT', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'SF Pro Display', 'SF Pro KR', 'Pretendard', 'SUIT', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
@@ -47,22 +57,122 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image: linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
-  background-size: 36px 36px;
-  mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.42), transparent 58%),
+    linear-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: auto, 34px 34px, 34px 34px;
+  mask-image: radial-gradient(circle at center, black 28%, transparent 88%);
   z-index: -1;
 }
 
 .app-shell::after {
   content: '';
   position: fixed;
-  inset: auto -15% -10% auto;
-  width: 18rem;
-  height: 18rem;
+  inset: auto -8% -7% auto;
+  width: 24rem;
+  height: 24rem;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.18), transparent 70%);
+  background: radial-gradient(circle, rgba(147, 197, 253, 0.42), transparent 68%);
   pointer-events: none;
   z-index: -1;
+}
+
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  pointer-events: none;
+  z-index: -2;
+  filter: blur(12px);
+}
+
+body::before {
+  inset: 5% auto auto -6%;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.85), transparent 72%);
+}
+
+body::after {
+  inset: auto auto 10% 72%;
+  width: 14rem;
+  height: 14rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(191, 219, 254, 0.52), transparent 70%);
+}
+
+::selection {
+  background: rgba(22, 119, 255, 0.14);
+}
+
+@layer components {
+  .glass-panel {
+    background: linear-gradient(180deg, var(--glass-strong), rgba(255, 255, 255, 0.58));
+    border: 1px solid var(--line-soft);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
+  .glass-panel-strong {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.68));
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    box-shadow: var(--shadow-float);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+  }
+
+  .section-panel {
+    @apply rounded-[30px] glass-panel;
+  }
+
+  .soft-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 249, 252, 0.88));
+    border: 1px solid var(--line-hard);
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+  }
+
+  .apple-input {
+    @apply w-full rounded-2xl border px-4 py-3 text-sm text-slate-800 outline-none transition;
+    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+
+  .apple-input:focus {
+    border-color: rgba(96, 165, 250, 0.42);
+    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+
+  .apple-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition;
+    background: linear-gradient(180deg, #1f8bff 0%, #1677ff 100%);
+    box-shadow: 0 12px 24px rgba(22, 119, 255, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  }
+
+  .apple-button:hover {
+    filter: brightness(1.03);
+  }
+
+  .apple-button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-700 transition;
+    background: rgba(255, 255, 255, 0.76);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+
+  .apple-chip {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold;
+    background: rgba(255, 255, 255, 0.68);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    color: #475467;
+  }
+
+  .apple-section-title {
+    @apply text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400;
+  }
 }
 
 ::-webkit-scrollbar {

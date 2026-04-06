@@ -37,7 +37,6 @@ export default function OnboardingView({ onComplete }) {
         joinedAt: new Date().toISOString(),
       };
 
-      console.log('Firestore에 사용자 저장 시작:', finalUser.uid);
       try {
         await createOrUpdateUser(user.uid, {
           uid: user.uid,
@@ -45,16 +44,11 @@ export default function OnboardingView({ onComplete }) {
           email: user.email || '',
           photoURL: user.photoURL || '',
           provider: user.provider,
-          shareConnections: [],
-          shareOptions: { events: true, expenses: true, daily: true },
-          notificationSettings: { enabled: false, defaultReminderMinutes: 10 },
           accounts: ['현금', '국민은행', '신한은행', '카카오뱅크'],
-          salarySettings: { day: 25 },
           quickTitles: [],
           dailyCompletionMap: {},
           joinedAt: finalUser.joinedAt,
         });
-        console.log('사용자 데이터 저장 성공');
       } catch (firestoreError) {
         if (!isPermissionDeniedError(firestoreError)) {
           throw firestoreError;
@@ -64,7 +58,6 @@ export default function OnboardingView({ onComplete }) {
       
       // localStorage에도 저장
       localStorage.setItem('currentUser', JSON.stringify(finalUser));
-      console.log('localStorage에 사용자 정보 저장 완료');
 
       onComplete(finalUser);
     } catch (error) {
@@ -84,22 +77,45 @@ export default function OnboardingView({ onComplete }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-md">
-        {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 mb-2">스케줄</h1>
-          <p className="text-sm text-slate-600">이메일만 입력하면 바로 시작됩니다</p>
+    <div className="min-h-screen px-4 py-8 sm:px-6">
+      <div className="mx-auto grid w-full max-w-5xl gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div className="section-panel overflow-hidden p-6 sm:p-8 lg:p-10">
+          <div className="max-w-xl">
+            <p className="apple-section-title">Welcome</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">같은 이메일이면 어느 기기에서든 같은 하루가 이어집니다.</h1>
+            <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">가입 절차 없이 이메일과 이름만 입력하면 일정, 데일리, 가계부가 같은 공간으로 바로 연결됩니다.</p>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <div className="soft-card rounded-[26px] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Sync</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">자동 동기화</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">같은 이메일로 접속하면 같은 데이터가 즉시 이어집니다.</p>
+            </div>
+            <div className="soft-card rounded-[26px] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Routine</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">루틴 관리</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">반복 일정과 오늘 할 일을 깔끔하게 정리합니다.</p>
+            </div>
+            <div className="soft-card rounded-[26px] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Finance</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">월급 주기 추적</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">월급 입력과 사용 기간 기준으로 지출을 한 번에 봅니다.</p>
+            </div>
+          </div>
         </div>
 
-        {/* Form Card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6">
+        <div className="glass-panel-strong rounded-[32px] p-6 sm:p-8">
+          <div className="mb-6">
+            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">바로 시작하기</h2>
+            <p className="mt-2 text-sm text-slate-500">이메일과 표시 이름만 입력하면 됩니다.</p>
+          </div>
+
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            {/* Email Input */}
             <div>
-              <label htmlFor="email" className="block text-xs font-semibold text-slate-600 mb-2">이메일</label>
+              <label htmlFor="email" className="mb-2 block text-xs font-semibold text-slate-500">이메일</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 text-slate-400" size={16} />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   id="email"
                   type="email"
@@ -112,15 +128,15 @@ export default function OnboardingView({ onComplete }) {
                   disabled={isSubmitting}
                   autoComplete="email"
                   required
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-50 transition"
+                  className="apple-input pl-11 disabled:opacity-50"
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="nickname" className="block text-xs font-semibold text-slate-600 mb-2">표시 이름 (선택)</label>
+              <label htmlFor="nickname" className="mb-2 block text-xs font-semibold text-slate-500">표시 이름 (선택)</label>
               <div className="relative">
-                <User className="absolute left-3 top-3 text-slate-400" size={16} />
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   id="nickname"
                   type="text"
@@ -132,14 +148,13 @@ export default function OnboardingView({ onComplete }) {
                   placeholder="예: 형일"
                   disabled={isSubmitting}
                   autoComplete="off"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-50 transition"
+                  className="apple-input pl-11 disabled:opacity-50"
                 />
               </div>
             </div>
 
-            {/* Error Message */}
             {errorMessage && (
-              <div className="rounded-lg bg-rose-50 border border-rose-300 p-4 flex items-start gap-3">
+              <div className="rounded-[22px] border border-rose-200 bg-rose-50/90 p-4 flex items-start gap-3">
                 <AlertCircle size={18} className="text-rose-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm text-rose-700 font-medium">{errorMessage}</p>
@@ -154,11 +169,10 @@ export default function OnboardingView({ onComplete }) {
               </div>
             )}
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full mt-6 bg-gradient-to-r from-sky-500 to-indigo-600 text-white font-bold py-2.5 rounded-xl hover:brightness-105 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-95"
+              className="apple-button mt-6 w-full disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
@@ -170,13 +184,12 @@ export default function OnboardingView({ onComplete }) {
               )}
             </button>
           </form>
-        </div>
 
-        {/* Footer Info */}
-        <p className="mt-6 text-center text-xs text-slate-500">
-          같은 이메일로 다른 기기에서 들어오면 같은 데이터가 보입니다.<br />
-          나중에 이메일이나 공유 코드로 다른 사람과도 연동할 수 있습니다.
-        </p>
+          <p className="mt-6 text-center text-xs leading-6 text-slate-500">
+            같은 이메일로 다른 기기에서 들어오면 같은 데이터가 보입니다.<br />
+            로그인하면 내 데이터가 자동 동기화됩니다.
+          </p>
+        </div>
       </div>
     </div>
   );

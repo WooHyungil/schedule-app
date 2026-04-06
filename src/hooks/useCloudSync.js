@@ -10,6 +10,7 @@ import {
   subscribeUserCollection,
   subscribeUserProfile,
 } from '../firestore-service';
+import { performanceAgent } from '../services/performanceAgent';
 
 function stableStringify(value) {
   try {
@@ -17,6 +18,21 @@ function stableStringify(value) {
   } catch {
     return '';
   }
+}
+
+function normalizeCollectionItems(items) {
+  const source = Array.isArray(items) ? items : [];
+  const byId = new Map();
+
+  for (let i = 0; i < source.length; i += 1) {
+    const item = source[i];
+    if (!item || typeof item !== 'object') continue;
+    const id = item.id;
+    if (!id) continue;
+    byId.set(id, item);
+  }
+
+  return Array.from(byId.values());
 }
 
 function createWorkspaceKey(value, prefix) {
@@ -45,6 +61,28 @@ function useLatestRef(value) {
   return ref;
 }
 
+function markSyncing(setSyncState) {
+  setSyncState((prev) => {
+    if (prev.status === 'syncing' && !prev.error) return prev;
+    return { ...prev, status: 'syncing', error: '' };
+  });
+}
+
+function markOnline(setSyncState) {
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  setSyncState((prev) => {
+    if (prev.status === 'online' && prev.lastSyncedAt) {
+      const prevMs = new Date(prev.lastSyncedAt).getTime();
+      if (!Number.isNaN(prevMs) && nowMs - prevMs < 15000) {
+        return prev;
+      }
+    }
+    return { status: 'online', lastSyncedAt: nowIso, error: '' };
+  });
+}
+
 function useSyncedCollection({
   uid,
   syncKey,
@@ -54,23 +92,42 @@ function useSyncedCollection({
   setSyncState,
   remoteHashesRef,
   readyRef,
+  isOptional = false, // 선택적 동기화 플래그
 }) {
   const localValueRef = useLatestRef(localValue);
+  const lastSubscriptionRef = useRef(null);
 
+  // 배치 업데이트를 위한 동기화 함수
+  const performSync = async (itemsToSync) => {
+    try {
+      await replaceUserCollection(uid, collectionName, itemsToSync);
+      markOnline(setSyncState);
+    } catch (error) {
+      setSyncState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: error.message || '데이터 동기화에 실패했습니다.',
+      }));
+      throw error;
+    }
+  };
+
+  // 리스너 구독 (선택적)
   useEffect(() => {
-    if (!uid) return undefined;
+    if (!uid || isOptional) return undefined; // 선택적 컬렉션은 구독하지 않음
 
     readyRef.current[syncKey] = false;
 
-    return subscribeUserCollection(uid, collectionName, async (remoteItems) => {
-      const normalizedItems = remoteItems || [];
+    lastSubscriptionRef.current = subscribeUserCollection(uid, collectionName, async (remoteItems) => {
+      const normalizedItems = normalizeCollectionItems(remoteItems);
       const remoteHash = stableStringify(normalizedItems);
       remoteHashesRef.current[syncKey] = remoteHash;
       readyRef.current[syncKey] = true;
 
-      const localHash = stableStringify(localValueRef.current || []);
+      const normalizedLocalValue = normalizeCollectionItems(localValueRef.current);
+      const localHash = stableStringify(normalizedLocalValue);
       if (normalizedItems.length === 0 && (localValueRef.current || []).length > 0) {
-        await replaceUserCollection(uid, collectionName, localValueRef.current).catch(() => {});
+        await replaceUserCollection(uid, collectionName, normalizedLocalValue).catch(() => {});
         return;
       }
 
@@ -78,50 +135,36 @@ function useSyncedCollection({
         setLocalValue(normalizedItems);
       }
 
-      setSyncState({
-        status: 'online',
-        lastSyncedAt: new Date().toISOString(),
-        error: '',
-      });
+      markOnline(setSyncState);
     });
-  }, [collectionName, localValueRef, readyRef, remoteHashesRef, setLocalValue, setSyncState, syncKey, uid]);
 
+    return () => {
+      if (lastSubscriptionRef.current) {
+        lastSubscriptionRef.current();
+      }
+    };
+  }, [collectionName, isOptional, localValueRef, readyRef, remoteHashesRef, setLocalValue, setSyncState, syncKey, uid]);
+
+  // 배치 업데이트 (로컬 변경사항 동기화)
   useEffect(() => {
     if (!uid || !readyRef.current[syncKey]) return;
 
-    const nextHash = stableStringify(localValue);
+    const normalizedLocalValue = normalizeCollectionItems(localValue);
+
+    const nextHash = stableStringify(normalizedLocalValue);
     if (nextHash === remoteHashesRef.current[syncKey]) return;
 
-    setSyncState((prev) => ({ ...prev, status: 'syncing', error: '' }));
+    markSyncing(setSyncState);
     remoteHashesRef.current[syncKey] = nextHash;
 
-    replaceUserCollection(uid, collectionName, localValue)
-      .then(() => {
-        setSyncState({
-          status: 'online',
-          lastSyncedAt: new Date().toISOString(),
-          error: '',
-        });
-      })
-      .catch((error) => {
-        setSyncState((prev) => ({
-          ...prev,
-          status: 'error',
-          error: error.message || '데이터 동기화에 실패했습니다.',
-        }));
-      });
+    // 성능 에이전트를 통한 배치 업데이트 (디바운싱됨)
+    performanceAgent.enqueueBatchUpdate(collectionName, normalizedLocalValue, performSync);
   }, [collectionName, localValue, readyRef, remoteHashesRef, setSyncState, syncKey, uid]);
 }
 
 export function useCloudSync() {
   const [currentUser, setCurrentUser] = useStorage('currentUser', null);
-  const [syncMode] = useStorage('syncMode', 'personal');
-  const [globalShareCode] = useStorage('globalShareCode', '');
-  const [shareConnections, setShareConnections] = useStorage('shareConnections', []);
-  const [shareOptions, setShareOptions] = useStorage('shareOptions', { events: true, expenses: true, daily: true });
-  const [notificationSettings, setNotificationSettings] = useStorage('notificationSettings', { enabled: false, defaultReminderMinutes: 10 });
   const [accounts, setAccounts] = useStorage('accounts', ['현금', '국민은행', '신한은행', '카카오뱅크']);
-  const [salarySettings, setSalarySettings] = useStorage('salarySettings', { day: 25 });
   const [quickTitles, setQuickTitles] = useStorage('quickTitles', []);
   const [dailyCompletionMap, setDailyCompletionMap] = useStorage('dailyCompletionMap', {});
   const [events, setEvents] = useStorage('events', []);
@@ -130,24 +173,16 @@ export function useCloudSync() {
   const [meetings, setMeetings] = useStorage('meetings', []);
   const [memos, setMemos] = useStorage('memos', []);
   const [syncState, setSyncState] = useState({ status: 'idle', lastSyncedAt: null, error: '' });
-  const normalizedGlobalCode = String(globalShareCode || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '');
-  const emailWorkspaceUid = createWorkspaceKey(currentUser?.email, 'email');
-  const globalWorkspaceUid = normalizedGlobalCode ? createWorkspaceKey(normalizedGlobalCode, 'global') : null;
-  const cloudUid = syncMode === 'global' && globalWorkspaceUid ? globalWorkspaceUid : emailWorkspaceUid;
+
+  // 이메일 기반 개인 동기화
+  // 같은 이메일로 로그인하면 본인 데이터를 어디서든 동기화
+  const cloudUid = createWorkspaceKey(currentUser?.email, 'email');
   const legacyLocalUid = currentUser?.uid || null;
-  const legacyGlobalUid = legacyLocalUid?.startsWith('local_') ? `global_${legacyLocalUid.replace(/^local_/, '')}` : null;
 
   const remoteHashesRef = useRef({});
   const readyRef = useRef({ profile: false });
   const currentUserRef = useLatestRef(currentUser);
-  const shareConnectionsRef = useLatestRef(shareConnections);
-  const shareOptionsRef = useLatestRef(shareOptions);
-  const notificationSettingsRef = useLatestRef(notificationSettings);
   const accountsRef = useLatestRef(accounts);
-  const salarySettingsRef = useLatestRef(salarySettings);
   const quickTitlesRef = useLatestRef(quickTitles);
   const dailyCompletionMapRef = useLatestRef(dailyCompletionMap);
 
@@ -158,15 +193,11 @@ export function useCloudSync() {
       photoURL: currentUser?.photoURL || '',
       provider: currentUser?.provider || 'guest',
       kakaoId: currentUser?.kakaoId || null,
-      shareConnections,
-      shareOptions,
-      notificationSettings,
       accounts,
-      salarySettings,
       quickTitles,
       dailyCompletionMap,
     }),
-    [accounts, currentUser?.displayName, currentUser?.email, currentUser?.kakaoId, currentUser?.name, currentUser?.photoURL, currentUser?.provider, dailyCompletionMap, notificationSettings, quickTitles, salarySettings, shareConnections, shareOptions]
+    [accounts, currentUser?.displayName, currentUser?.email, currentUser?.kakaoId, currentUser?.name, currentUser?.photoURL, currentUser?.provider, dailyCompletionMap, quickTitles]
   );
 
   useEffect(() => {
@@ -186,7 +217,7 @@ export function useCloudSync() {
         const shouldTryMigration = !targetProfile && targetEvents.length === 0;
 
         if (shouldTryMigration) {
-          const candidates = [legacyGlobalUid, legacyLocalUid].filter((value) => value && value !== cloudUid);
+          const candidates = [legacyLocalUid].filter((value) => value && value !== cloudUid);
           for (const candidateUid of candidates) {
             const migration = await migrateWorkspaceData(candidateUid, cloudUid, {
               uid: cloudUid,
@@ -235,20 +266,8 @@ export function useCloudSync() {
         if (stableStringify(mergedUser) !== stableStringify(currentUserRef.current)) {
           setCurrentUser(mergedUser);
         }
-        if (stableStringify(nextProfile.shareConnections || []) !== stableStringify(shareConnectionsRef.current)) {
-          setShareConnections(nextProfile.shareConnections || []);
-        }
-        if (stableStringify(nextProfile.shareOptions || { events: true, expenses: true, daily: true }) !== stableStringify(shareOptionsRef.current)) {
-          setShareOptions(nextProfile.shareOptions || { events: true, expenses: true, daily: true });
-        }
-        if (stableStringify(nextProfile.notificationSettings || { enabled: false, defaultReminderMinutes: 10 }) !== stableStringify(notificationSettingsRef.current)) {
-          setNotificationSettings(nextProfile.notificationSettings || { enabled: false, defaultReminderMinutes: 10 });
-        }
         if (stableStringify(nextProfile.accounts || ['현금', '국민은행', '신한은행', '카카오뱅크']) !== stableStringify(accountsRef.current)) {
           setAccounts(nextProfile.accounts || ['현금', '국민은행', '신한은행', '카카오뱅크']);
-        }
-        if (stableStringify(nextProfile.salarySettings || { day: 25 }) !== stableStringify(salarySettingsRef.current)) {
-          setSalarySettings(nextProfile.salarySettings || { day: 25 });
         }
         if (stableStringify(nextProfile.quickTitles || []) !== stableStringify(quickTitlesRef.current)) {
           setQuickTitles(nextProfile.quickTitles || []);
@@ -258,9 +277,9 @@ export function useCloudSync() {
         }
       }
 
-      setSyncState({ status: 'online', lastSyncedAt: new Date().toISOString(), error: '' });
+      markOnline(setSyncState);
     });
-  }, [accountsRef, cloudUid, currentUser, currentUserRef, dailyCompletionMapRef, legacyGlobalUid, legacyLocalUid, notificationSettingsRef, profilePayload, quickTitlesRef, salarySettingsRef, setAccounts, setCurrentUser, setDailyCompletionMap, setNotificationSettings, setQuickTitles, setSalarySettings, setShareConnections, setShareOptions, shareConnectionsRef, shareOptionsRef]);
+  }, [accountsRef, cloudUid, currentUser, currentUserRef, dailyCompletionMapRef, legacyLocalUid, profilePayload, quickTitlesRef, setAccounts, setCurrentUser, setDailyCompletionMap, setQuickTitles]);
 
   useEffect(() => {
     if (!cloudUid || !readyRef.current.profile) return;
@@ -268,12 +287,12 @@ export function useCloudSync() {
     const nextHash = stableStringify(profilePayload);
     if (nextHash === remoteHashesRef.current.profile) return;
 
-    setSyncState((prev) => ({ ...prev, status: 'syncing', error: '' }));
+    markSyncing(setSyncState);
     remoteHashesRef.current.profile = nextHash;
 
     saveUserProfile(cloudUid, profilePayload)
       .then(() => {
-        setSyncState({ status: 'online', lastSyncedAt: new Date().toISOString(), error: '' });
+        markOnline(setSyncState);
       })
       .catch((error) => {
         setSyncState((prev) => ({
@@ -284,11 +303,66 @@ export function useCloudSync() {
       });
   }, [cloudUid, profilePayload]);
 
-  useSyncedCollection({ uid: cloudUid, syncKey: 'events', collectionName: 'events', localValue: events, setLocalValue: setEvents, setSyncState, remoteHashesRef, readyRef });
-  useSyncedCollection({ uid: cloudUid, syncKey: 'expenses', collectionName: 'expenses', localValue: expenses, setLocalValue: setExpenses, setSyncState, remoteHashesRef, readyRef });
-  useSyncedCollection({ uid: cloudUid, syncKey: 'dailyTemplates', collectionName: 'dailyTemplates', localValue: dailyTemplates, setLocalValue: setDailyTemplates, setSyncState, remoteHashesRef, readyRef });
-  useSyncedCollection({ uid: cloudUid, syncKey: 'meetings', collectionName: 'meetings', localValue: meetings, setLocalValue: setMeetings, setSyncState, remoteHashesRef, readyRef });
-  useSyncedCollection({ uid: cloudUid, syncKey: 'memos', collectionName: 'memos', localValue: memos, setLocalValue: setMemos, setSyncState, remoteHashesRef, readyRef });
+  // 모든 핵심 데이터를 실시간 동기화하여 기기 간 즉시 반영
+  useSyncedCollection({
+    uid: cloudUid,
+    syncKey: 'events',
+    collectionName: 'events',
+    localValue: events,
+    setLocalValue: setEvents,
+    setSyncState,
+    remoteHashesRef,
+    readyRef,
+    isOptional: false,
+  });
+
+  useSyncedCollection({
+    uid: cloudUid,
+    syncKey: 'expenses',
+    collectionName: 'expenses',
+    localValue: expenses,
+    setLocalValue: setExpenses,
+    setSyncState,
+    remoteHashesRef,
+    readyRef,
+    isOptional: false,
+  });
+
+  useSyncedCollection({
+    uid: cloudUid,
+    syncKey: 'dailyTemplates',
+    collectionName: 'dailyTemplates',
+    localValue: dailyTemplates,
+    setLocalValue: setDailyTemplates,
+    setSyncState,
+    remoteHashesRef,
+    readyRef,
+    isOptional: false,
+  });
+
+  useSyncedCollection({
+    uid: cloudUid,
+    syncKey: 'meetings',
+    collectionName: 'meetings',
+    localValue: meetings,
+    setLocalValue: setMeetings,
+    setSyncState,
+    remoteHashesRef,
+    readyRef,
+    isOptional: false,
+  });
+
+  useSyncedCollection({
+    uid: cloudUid,
+    syncKey: 'memos',
+    collectionName: 'memos',
+    localValue: memos,
+    setLocalValue: setMemos,
+    setSyncState,
+    remoteHashesRef,
+    readyRef,
+    isOptional: false,
+  });
 
   return syncState;
 }

@@ -6,33 +6,50 @@ export default function TodoView() {
   const [dailyTemplates] = useStorage('dailyTemplates', []);
   const [dailyCompletionMap, setDailyCompletionMap] = useStorage('dailyCompletionMap', {});
   const [showCompleted, setShowCompleted] = useState(true);
+  const safeEvents = useMemo(() => {
+    const src = Array.isArray(events) ? events : [];
+    return src.filter((item) => item && typeof item === 'object' && item.id);
+  }, [events]);
+  const safeDailyTemplates = useMemo(() => {
+    const src = Array.isArray(dailyTemplates) ? dailyTemplates : [];
+    return src.filter((item) => item && typeof item === 'object' && item.id);
+  }, [dailyTemplates]);
+  const safeDailyCompletionMap = dailyCompletionMap && typeof dailyCompletionMap === 'object' ? dailyCompletionMap : {};
+
+  const safeTime = (value) => {
+    try {
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return '--:--';
+      return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '--:--';
+    }
+  };
 
   const today = formatDate(new Date()).split('T')[0];
 
   const todayTasks = useMemo(() => {
     const date = new Date(today);
 
-    const normal = events
+    const normal = safeEvents
       .filter((event) => formatDate(event.startDate).split('T')[0] === today)
       .map((event) => ({ ...event, isDailyTemplate: false }));
 
-    const daily = dailyTemplates
+    const daily = safeDailyTemplates
       .filter((template) => appliesTemplateOnDate(template, date))
       .map((template) => ({
         id: `daily-${template.id}-${today}`,
         templateId: template.id,
         title: template.title,
         description: template.description,
-        ownerName: template.ownerName,
-        visibility: template.visibility,
         startDate: new Date(`${today}T09:00`),
         endDate: new Date(`${today}T10:00`),
-        isCompleted: Boolean(dailyCompletionMap[`${template.id}_${today}`]),
+        isCompleted: Boolean(safeDailyCompletionMap[`${template.id}_${today}`]),
         isDailyTemplate: true,
       }));
 
     return [...daily, ...normal];
-  }, [events, dailyTemplates, today, dailyCompletionMap]);
+  }, [safeEvents, safeDailyTemplates, today, safeDailyCompletionMap]);
 
   const filteredTasks = showCompleted
     ? todayTasks
@@ -45,72 +62,63 @@ export default function TodoView() {
     if (task.isDailyTemplate) {
       const key = `${task.templateId}_${today}`;
       setDailyCompletionMap({
-        ...dailyCompletionMap,
+        ...safeDailyCompletionMap,
         [key]: !task.isCompleted,
       });
       return;
     }
 
     setEvents(
-      events.map((event) =>
+      safeEvents.map((event) =>
         event.id === task.id ? { ...event, isCompleted: !event.isCompleted } : event
       )
     );
   };
 
   return (
-    <div className="p-4 max-w-4xl mx-auto">
-      <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
-        <h2 className="text-lg font-bold mb-4">
-          {new Date().toLocaleDateString('ko-KR', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
-        </h2>
-
+    <div className="mx-auto max-w-5xl px-4 pb-6">
+      <div className="section-panel mb-4 p-5">
         <div className="space-y-3">
           <div>
             <div className="flex justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">진행률</span>
-              <span className="text-lg font-bold text-blue-600">
+              <span className="text-sm font-medium text-slate-600">진행률</span>
+              <span className="text-lg font-bold text-sky-600">
                 {Math.round(completionPercentage)}%
               </span>
             </div>
-            <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200/80">
               <div
-                className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                className="h-full rounded-full bg-[linear-gradient(90deg,#4ba2ff,#0a84ff)] transition-all duration-300"
                 style={{ width: `${completionPercentage}%` }}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 pt-2">
-            <div className="bg-orange-50 p-3 rounded-lg">
-              <p className="text-sm text-gray-600">남은 작업</p>
-              <p className="text-lg font-bold text-orange-600">
+            <div className="soft-card rounded-[24px] p-4">
+              <p className="text-sm text-slate-500">남은 작업</p>
+              <p className="text-lg font-bold text-amber-600">
                 {todayTasks.filter((t) => !t.isCompleted).length}개
               </p>
             </div>
-            <div className="bg-green-50 p-3 rounded-lg">
-              <p className="text-sm text-gray-600">완료됨</p>
-              <p className="text-lg font-bold text-green-600">
+            <div className="soft-card rounded-[24px] p-4">
+              <p className="text-sm text-slate-500">완료됨</p>
+              <p className="text-lg font-bold text-emerald-600">
                 {todayTasks.filter((t) => t.isCompleted).length}개
               </p>
             </div>
           </div>
         </div>
 
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-5 flex items-center gap-3">
           <input
             type="checkbox"
             id="showCompleted"
             checked={showCompleted}
             onChange={(e) => setShowCompleted(e.target.checked)}
-            className="w-4 h-4 rounded border-2 border-gray-300"
+            className="h-4 w-4 rounded border-2 border-slate-300"
           />
-          <label htmlFor="showCompleted" className="text-sm font-medium cursor-pointer">
+          <label htmlFor="showCompleted" className="cursor-pointer text-sm font-medium text-slate-700">
             완료된 항목 표시
           </label>
         </div>
@@ -118,8 +126,8 @@ export default function TodoView() {
 
       <div className="space-y-3">
         {filteredTasks.length === 0 ? (
-          <div className="bg-white rounded-lg p-8 text-center">
-            <p className="text-gray-500 text-lg font-medium">
+          <div className="glass-panel rounded-[30px] p-10 text-center">
+            <p className="text-lg font-medium text-slate-500">
               {showCompleted ? '오늘의 일정이 없습니다' : '모든 작업을 완료했습니다! 🎉'}
             </p>
           </div>
@@ -127,14 +135,14 @@ export default function TodoView() {
           filteredTasks.map((task) => (
             <div
               key={task.id}
-              className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex items-start gap-3"
+              className="glass-panel flex items-start gap-3 rounded-[28px] p-4 transition-shadow hover:shadow-[0_18px_36px_rgba(15,23,42,0.08)]"
             >
               <button
                 onClick={() => toggleCompletion(task)}
-                className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center mt-1 transition-colors ${
+                className={`mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
                   task.isCompleted
                     ? 'bg-green-500 border-green-500'
-                    : 'border-gray-300 hover:border-gray-400'
+                    : 'border-slate-300 hover:border-slate-400'
                 }`}
               >
                 {task.isCompleted && (
@@ -149,8 +157,8 @@ export default function TodoView() {
                   <h3
                     className={`font-medium ${
                       task.isCompleted
-                        ? 'text-gray-400 line-through'
-                        : 'text-gray-900'
+                        ? 'text-slate-400 line-through'
+                        : 'text-slate-950'
                     }`}
                   >
                     {task.title}
@@ -160,32 +168,16 @@ export default function TodoView() {
                       데일리
                     </span>
                   )}
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                    {task.ownerName || '나'}
-                  </span>
-                  {task.visibility === 'shared' && (
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
-                      공통
-                    </span>
-                  )}
                 </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  {new Date(task.startDate).toLocaleTimeString('ko-KR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  ~{' '}
-                  {new Date(task.endDate).toLocaleTimeString('ko-KR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                <p className="mt-1 text-sm text-slate-500">
+                  {safeTime(task.startDate)} ~ {safeTime(task.endDate)}
                 </p>
                 {task.description && (
-                  <p className="text-sm text-gray-600 mt-2">{task.description}</p>
+                  <p className="mt-2 text-sm text-slate-600">{task.description}</p>
                 )}
                 {task.category && (
                   <div className="mt-2">
-                    <span className="inline-block text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                    <span className="inline-block rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700">
                       {task.category}
                     </span>
                   </div>

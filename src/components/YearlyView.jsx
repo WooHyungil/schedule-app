@@ -1,14 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useStorage, formatDate, appliesTemplateOnDate } from '../utils';
 
-export default function YearlyView({ selectedYear: selectedYearProp, hideYearSelector = false }) {
+export default function YearlyView({ selectedYear }) {
   const [events] = useStorage('events', []);
   const [dailyTemplates] = useStorage('dailyTemplates', []);
   const [dailyCompletionMap] = useStorage('dailyCompletionMap', {});
-
-  const currentYear = new Date().getFullYear();
-  const [selectedYearState, setSelectedYearState] = useState(currentYear);
-  const selectedYear = selectedYearProp ?? selectedYearState;
 
   const yearSummary = useMemo(() => {
     let total = 0;
@@ -60,18 +56,6 @@ export default function YearlyView({ selectedYear: selectedYearProp, hideYearSel
             <h2 className="text-lg font-bold text-slate-800">연간 수행 현황</h2>
             <p className="text-xs text-slate-500 mt-0.5">일정 완료율을 한눈에 확인하세요</p>
           </div>
-          {!hideYearSelector && (
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYearState(Number(e.target.value))}
-              className="text-sm px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-300"
-            >
-              {[...Array(7)].map((_, i) => {
-                const y = currentYear - 3 + i;
-                return <option key={y} value={y}>{y}년</option>;
-              })}
-            </select>
-          )}
         </div>
 
         {/* 통계 카드 */}
