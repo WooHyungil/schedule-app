@@ -35,13 +35,12 @@ export default function SettingsView({ onLogout }) {
   const [copied, setCopied] = useState(false);
 
   const defaultGlobalCode = useMemo(() => {
-    const seed = String(currentUser?.uid || '')
-      .replace(/^local_/, '')
+    const seed = String(currentUser?.email || '')
       .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, '')
+      .replace(/[^a-z0-9_-]/g, '_')
       .slice(0, 18);
     return seed || 'team-main';
-  }, [currentUser?.uid]);
+  }, [currentUser?.email]);
 
   useEffect(() => {
     if (!globalShareCode && defaultGlobalCode) {
@@ -442,7 +441,7 @@ export default function SettingsView({ onLogout }) {
               {shareConnections.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex items-center gap-3 p-4 bg-white rounded-lg border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all"
+                  className="flex items-center gap-3 p-4 bg-white rounded-lg border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all"
                 >
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
                     <Check size={18} />
@@ -462,10 +461,10 @@ export default function SettingsView({ onLogout }) {
                   <button
                     type="button"
                     onClick={() => removeConnection(item.id)}
-                    className="p-2 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"
-                    aria-label="공유 제거"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-all"
+                    aria-label="공유 연결 끊기"
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={14} /> 연결 끊기
                   </button>
                 </div>
               ))}

@@ -16,6 +16,22 @@ function stableStringify(value) {
   }
 }
 
+function createWorkspaceKey(value, prefix) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._-]/g, '');
+
+  if (!normalized) return null;
+
+  const base = btoa(unescape(encodeURIComponent(normalized)))
+    .replace(/=+$/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+
+  return `${prefix}_${base}`;
+}
+
 function useLatestRef(value) {
   const ref = useRef(value);
 
@@ -115,14 +131,9 @@ export function useCloudSync() {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '');
-  const defaultGlobalSeed = String(currentUser?.uid || '')
-    .replace(/^local_/, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '');
-  const effectiveGlobalCode = normalizedGlobalCode || defaultGlobalSeed;
-  const cloudUid = syncMode === 'global'
-    ? (effectiveGlobalCode ? `global_${effectiveGlobalCode}` : null)
-    : currentUser?.uid;
+  const emailWorkspaceUid = createWorkspaceKey(currentUser?.email, 'email');
+  const globalWorkspaceUid = normalizedGlobalCode ? createWorkspaceKey(normalizedGlobalCode, 'global') : null;
+  const cloudUid = syncMode === 'global' && globalWorkspaceUid ? globalWorkspaceUid : emailWorkspaceUid;
 
   const remoteHashesRef = useRef({});
   const readyRef = useRef({ profile: false });
@@ -185,7 +196,7 @@ export function useCloudSync() {
       } else {
         const mergedUser = {
           ...currentUserRef.current,
-          uid: cloudUid,
+          uid: currentUserRef.current?.uid || currentUser?.uid,
           name: nextProfile.name || currentUserRef.current?.name || currentUserRef.current?.displayName || '사용자',
           email: nextProfile.email || currentUserRef.current?.email || '',
           photoURL: nextProfile.photoURL || currentUserRef.current?.photoURL || '',
