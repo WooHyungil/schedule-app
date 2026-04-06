@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="schedule icon">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#667eea"/>
+      <stop offset="50%" stop-color="#764ba2"/>
+      <stop offset="100%" stop-color="#f093fb"/>
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <!-- 배경 -->
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="url(#g1)" filter="url(#shadow)"/>
+  
+  <!-- 달력 카드 -->
+  <g>
+    <!-- 흰 바탕 -->
+    <rect x="100" y="130" width="312" height="300" rx="44" fill="#ffffff" opacity="0.98"/>
+    
+    <!-- 상단 날짜 표시 -->
+    <rect x="100" y="130" width="312" height="100" rx="44 44 0 0" fill="#667eea" opacity="0.15"/>
+    <text x="256" y="220" font-size="72" font-weight="bold" fill="#667eea" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">26</text>
+    
+    <!-- 요일 표시 -->
+    <text x="144" y="285" font-size="28" font-weight="600" fill="#94a3b8" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">월</text>
+    <text x="200" y="285" font-size="28" font-weight="600" fill="#94a3b8" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">화</text>
+    <text x="256" y="285" font-size="28" font-weight="600" fill="#94a3b8" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">수</text>
+    <text x="312" y="285" font-size="28" font-weight="600" fill="#94a3b8" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">목</text>
+    <text x="368" y="285" font-size="28" font-weight="600" fill="#94a3b8" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif">금</text>
+    
+    <!-- 날짜 칸들 -->
+    <circle cx="144" cy="335" r="22" fill="#c084fc" opacity="0.3"/>
+    <circle cx="200" cy="335" r="22" fill="#667eea" opacity="0.2"/>
+    <circle cx="256" cy="335" r="22" fill="#667eea" opacity="0.2"/>
+    <circle cx="312" cy="335" r="22" fill="#667eea" opacity="0.2"/>
+    <circle cx="368" cy="335" r="22" fill="#667eea" opacity="0.2"/>
+    
+    <circle cx="144" cy="390" r="22" fill="#667eea" opacity="0.2"/>
+    <circle cx="200" cy="390" r="22" fill="#667eea" opacity="0.2"/>
+    <circle cx="256" cy="390" r="22" fill="#f093fb" opacity="0.3"/>
+    
+    <!-- 강조 점 -->
+    <circle cx="144" cy="335" r="14" fill="#c084fc"/>
+    <circle cx="256" cy="390" r="14" fill="#f093fb"/>
+  </g>
+</svg>
