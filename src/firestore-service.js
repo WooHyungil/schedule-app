@@ -89,11 +89,54 @@ export async function getUser(userId) {
   try {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
-    return userSnap.exists() ? userSnap.data() : null;
+    return userSnap.exists() ? normalizeFirestoreValue(userSnap.data()) : null;
   } catch (error) {
     console.error('Error getting user:', error);
     throw error;
   }
+}
+
+export async function getUserCollection(userId, collectionName) {
+  try {
+    const collectionRef = collection(db, `users/${userId}/${collectionName}`);
+    const querySnap = await getDocs(collectionRef);
+    return querySnap.docs.map((snapshotDoc) => normalizeFirestoreValue(snapshotDoc.data()));
+  } catch (error) {
+    console.error(`Error getting ${collectionName}:`, error);
+    throw error;
+  }
+}
+
+export async function migrateWorkspaceData(sourceUserId, targetUserId, fallbackProfile = {}) {
+  if (!sourceUserId || !targetUserId || sourceUserId === targetUserId) {
+    return { migrated: false };
+  }
+
+  const sourceProfile = await getUser(sourceUserId);
+  const collectionNames = ['events', 'expenses', 'dailyTemplates', 'meetings', 'memos'];
+  const collectionEntries = await Promise.all(
+    collectionNames.map(async (collectionName) => {
+      const items = await getUserCollection(sourceUserId, collectionName);
+      return [collectionName, items || []];
+    })
+  );
+
+  const hasAnyCollectionData = collectionEntries.some(([, items]) => items.length > 0);
+  if (!sourceProfile && !hasAnyCollectionData) {
+    return { migrated: false };
+  }
+
+  await createOrUpdateUser(targetUserId, {
+    ...fallbackProfile,
+    ...(sourceProfile || {}),
+    uid: targetUserId,
+  });
+
+  await Promise.all(
+    collectionEntries.map(([collectionName, items]) => replaceUserCollection(targetUserId, collectionName, items))
+  );
+
+  return { migrated: true, sourceUserId, targetUserId };
 }
 
 export function subscribeUserProfile(userId, callback) {

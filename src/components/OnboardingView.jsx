@@ -174,8 +174,8 @@ export default function OnboardingView({ onComplete }) {
 
         {/* Footer Info */}
         <p className="mt-6 text-center text-xs text-slate-500">
-          비밀번호 없이 이메일 기반으로 사용자를 구분합니다.<br />
-          나중에 이메일로 일정 공유 대상을 쉽게 추가할 수 있습니다.
+          같은 이메일로 다른 기기에서 들어오면 같은 데이터가 보입니다.<br />
+          나중에 이메일이나 공유 코드로 다른 사람과도 연동할 수 있습니다.
         </p>
       </div>
     </div>

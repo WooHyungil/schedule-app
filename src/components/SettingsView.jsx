@@ -14,7 +14,7 @@ export default function SettingsView({ onLogout }) {
   const [events] = useStorage('events', []);
   const [expenses] = useStorage('expenses', []);
   const [dailyTemplates] = useStorage('dailyTemplates', []);
-  const [syncMode, setSyncMode] = useStorage('syncMode', 'global');
+  const [syncMode, setSyncMode] = useStorage('syncMode', 'personal');
   const [globalShareCode, setGlobalShareCode] = useStorage('globalShareCode', '');
 
   const [currentUser, setCurrentUser] = useStorage('currentUser', null);

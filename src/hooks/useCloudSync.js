@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStorage } from '../utils';
 import {
   createOrUpdateUser,
+  getUser,
+  getUserCollection,
+  migrateWorkspaceData,
   replaceUserCollection,
   saveUserProfile,
   subscribeUserCollection,
@@ -112,7 +115,7 @@ function useSyncedCollection({
 
 export function useCloudSync() {
   const [currentUser, setCurrentUser] = useStorage('currentUser', null);
-  const [syncMode] = useStorage('syncMode', 'global');
+  const [syncMode] = useStorage('syncMode', 'personal');
   const [globalShareCode] = useStorage('globalShareCode', '');
   const [shareConnections, setShareConnections] = useStorage('shareConnections', []);
   const [shareOptions, setShareOptions] = useStorage('shareOptions', { events: true, expenses: true, daily: true });
@@ -134,6 +137,8 @@ export function useCloudSync() {
   const emailWorkspaceUid = createWorkspaceKey(currentUser?.email, 'email');
   const globalWorkspaceUid = normalizedGlobalCode ? createWorkspaceKey(normalizedGlobalCode, 'global') : null;
   const cloudUid = syncMode === 'global' && globalWorkspaceUid ? globalWorkspaceUid : emailWorkspaceUid;
+  const legacyLocalUid = currentUser?.uid || null;
+  const legacyGlobalUid = legacyLocalUid?.startsWith('local_') ? `global_${legacyLocalUid.replace(/^local_/, '')}` : null;
 
   const remoteHashesRef = useRef({});
   const readyRef = useRef({ profile: false });
@@ -174,17 +179,40 @@ export function useCloudSync() {
 
     setSyncState((prev) => ({ ...prev, status: 'connecting', error: '' }));
 
-    createOrUpdateUser(cloudUid, {
-      uid: cloudUid,
-      ...profilePayload,
-      joinedAt: currentUser.joinedAt || currentUser.createdAt || new Date().toISOString(),
-    }).catch((error) => {
-      setSyncState((prev) => ({
-        ...prev,
-        status: 'error',
-        error: error.message || '사용자 정보를 저장하지 못했습니다.',
-      }));
-    });
+    (async () => {
+      try {
+        const targetProfile = await getUser(cloudUid).catch(() => null);
+        const targetEvents = await getUserCollection(cloudUid, 'events').catch(() => []);
+        const shouldTryMigration = !targetProfile && targetEvents.length === 0;
+
+        if (shouldTryMigration) {
+          const candidates = [legacyGlobalUid, legacyLocalUid].filter((value) => value && value !== cloudUid);
+          for (const candidateUid of candidates) {
+            const migration = await migrateWorkspaceData(candidateUid, cloudUid, {
+              uid: cloudUid,
+              ...profilePayload,
+              joinedAt: currentUser.joinedAt || currentUser.createdAt || new Date().toISOString(),
+            }).catch(() => ({ migrated: false }));
+
+            if (migration?.migrated) {
+              break;
+            }
+          }
+        }
+
+        await createOrUpdateUser(cloudUid, {
+          uid: cloudUid,
+          ...profilePayload,
+          joinedAt: currentUser.joinedAt || currentUser.createdAt || new Date().toISOString(),
+        });
+      } catch (error) {
+        setSyncState((prev) => ({
+          ...prev,
+          status: 'error',
+          error: error.message || '사용자 정보를 저장하지 못했습니다.',
+        }));
+      }
+    })();
 
     return subscribeUserProfile(cloudUid, async (remoteProfile) => {
       const nextProfile = remoteProfile || {};
@@ -232,7 +260,7 @@ export function useCloudSync() {
 
       setSyncState({ status: 'online', lastSyncedAt: new Date().toISOString(), error: '' });
     });
-  }, [accountsRef, cloudUid, currentUser, currentUserRef, dailyCompletionMapRef, notificationSettingsRef, profilePayload, quickTitlesRef, salarySettingsRef, setAccounts, setCurrentUser, setDailyCompletionMap, setNotificationSettings, setQuickTitles, setSalarySettings, setShareConnections, setShareOptions, shareConnectionsRef, shareOptionsRef]);
+  }, [accountsRef, cloudUid, currentUser, currentUserRef, dailyCompletionMapRef, legacyGlobalUid, legacyLocalUid, notificationSettingsRef, profilePayload, quickTitlesRef, salarySettingsRef, setAccounts, setCurrentUser, setDailyCompletionMap, setNotificationSettings, setQuickTitles, setSalarySettings, setShareConnections, setShareOptions, shareConnectionsRef, shareOptionsRef]);
 
   useEffect(() => {
     if (!cloudUid || !readyRef.current.profile) return;
